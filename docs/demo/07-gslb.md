@@ -80,9 +80,9 @@ desktop ──► lab-DNS (BIND, 10.80.0.53)
   betekent snellere failover maar meer DNS-verkeer.
 - **Methoden**: *global availability* (actief/standby), *weight* (gewogen, actief/actief, script 8) en
   *topology* (op basis van de locatie van de client).
-- **Sync-beveiliging**: de serverregel naar de andere FortiADC heeft `auth_verify` met een gedeelde sleutel.
-  Op 8.0.4 eist de luisterende kant daar (nog) niets mee; de echte bescherming is een afgeschermd
-  managementnetwerk voor poort 5858. Zie `docs/fortiadc-praktijk.md`, hoofdstuk 6.
+- **Sync-beveiliging**: de FortiADC's authenticeren de GSLB-sync met een gedeelde sleutel (`auth_verify`,
+  versleuteld): als `auth-key` in `config global-load-balance setting` én op de serverregel naar de ander.
+  Lukt dat niet, dan zet de controller de sync zonder authenticatie en meldt dat in de log.
 - **Generic Host** gebruik je voor servers of load balancers die geen FortiADC zijn, én als meerdere FQDN's
   één VIP delen: zie script 8.
 

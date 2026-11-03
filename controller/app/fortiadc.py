@@ -582,16 +582,16 @@ def setting_fields(cli: Cli, path: str, preset: list[str] = ()) -> list[str]:
     listing = cli.help("set")
     cli.run("end")
     del cli.errors[n:]
-    fields = re.findall(r"^\s*([a-z][a-z0-9_-]+)\s{2,}\S", listing, re.M)
+    # '*' vóór een veld = verplicht (bijv. '*auth-key  Password of this device.')
+    fields = re.findall(r"^\s*\*?([a-z][a-z0-9_-]+)\s{2,}\S", listing, re.M)
     return [f for f in dict.fromkeys(fields) if f not in ("set", "unset", "get", "show", "end", "next", "abort")]
 
 
 def resolve_gslb_secret(cli: Cli, lines: list[str], log, site) -> list[str]:
-    """Het veld voor het sync-wachtwoord in 'config global-load-balance setting' heet
-    niet in elke versie 'password': lees de velden op de FortiADC zelf en kies op
-    trefwoord. 8.0.4 heeft er geen (alleen ca-verify/user-defined-certificate); daar
-    weigert 'end' auth_verify zonder waarde (-56). Dan laten we de setting op zijn
-    stand en staat de sleutel alleen op de serverregel (auth-key)."""
+    """Het veld voor het eigen sync-wachtwoord in 'config global-load-balance setting'
+    heet per versie anders (8.0.4: auth-key, 7.4-documentatie: password): lees de
+    velden op de FortiADC zelf en kies op trefwoord. Zonder wachtwoordveld laten we
+    de setting op zijn stand; de sleutel staat dan alleen op de serverregel."""
     field = adcconfig.GSLB_SECRET_FIELD
     if not any(l.strip().startswith(f"set {field} ") for l in lines):
         return lines
@@ -604,8 +604,8 @@ def resolve_gslb_secret(cli: Cli, lines: list[str], log, site) -> list[str]:
     start = next(i for i, l in enumerate(lines) if l.strip() == "config global-load-balance setting")
     stop = next(i for i in range(start, len(lines)) if lines[i].strip() == "end")
     if not pick:
-        log(f"[{site}]   sync-wachtwoord: deze versie heeft er geen in de setting; auth-type van de "
-            "setting ongewijzigd, sleutel alleen op de serverregel (auth-key)")
+        log(f"[{site}]   ⚠ sync-wachtwoord: geen wachtwoordveld in de setting; die blijft ongewijzigd, "
+            "sleutel alleen op de serverregel")
         return lines[:start] + lines[stop + 1:]
     log(f"[{site}]   sync-wachtwoord: veld '{pick}' gebruikt (geen '{field}' op deze versie)")
     return [l.replace(f"set {field} ", f"set {pick} ", 1) if start < i < stop else l
