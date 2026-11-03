@@ -80,8 +80,8 @@
 
     <div class="card">
       <div class="card-head"><h2><span class="step">4</span> FortiADC-beheer</h2><span class="badge" data-check="admin"></span></div>
-      <p class="help">Het wachtwoord van <code>admin</code>. Het gaat via de config drive mee bij de eerste boot; de
-        controller gebruikt het daarna voor SSH en de REST API.</p>
+      <p class="help">Het wachtwoord van <code>admin</code>. De controller zet het bij de eerste boot via de seriële
+        console en gebruikt het daarna voor SSH en de REST API.</p>
       <div class="field"><label for="i-adminpw">Admin-wachtwoord</label>
         <div class="secret"><input id="i-adminpw" type="password" autocomplete="off" placeholder="minimaal 8 tekens">
           <button class="eye" data-eye="i-adminpw" type="button" title="Tonen/verbergen"></button>
@@ -96,7 +96,7 @@
         standaard 2, dus VM02). Voor de WAF-signatures is FortiGuard nodig.</p>
       <div class="choices">
         <label class="choice"><input type="radio" name="lic" value="file"><span><b>Licentiebestand</b>
-          <small><code>.lic</code> uit FortiCare; gaat mee op de config drive.</small></span></label>
+          <small><code>.lic</code> uit FortiCare; na de eerste boot via de REST API geüpload.</small></span></label>
         <label class="choice"><input type="radio" name="lic" value="fortiflex"><span><b>FortiFlex-token</b>
           <small>Na de boot geactiveerd met <code>execute vm-license</code>.</small></span></label>
         <label class="choice"><input type="radio" name="lic" value="none"><span><b>Geen / later</b>

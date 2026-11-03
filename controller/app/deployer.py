@@ -164,8 +164,6 @@ def deploy_fortiadc(log, topo, site):
     for kind, name in images.items():
         remote[kind] = f"{h.workdir}/{name}"
         _put_with_progress(log, UPLOADS / name, remote[kind])
-    log(f"[{site}] cloud-init config drive bouwen (day-0 CLI + licentie)")
-    _install_iso(fortiadc.build_config_iso(topo, state, site), fortiadc.iso_name(site))
 
     update_adc_state(site, provisioned=False, problems=[], info=None)
     bus = fad.get("disk_bus", "virtio")
@@ -186,14 +184,13 @@ def deploy_fortiadc(log, topo, site):
         _import_boot_disk(log, vmid, remote["data"], hcfg["storage"], bus, index=1)
         if fad.get("data_disk_gb"):
             h.run(["qm", "disk", "resize", str(vmid), f"{bus}1", f"{fad['data_disk_gb']}G"], log=log)
-        h.run(["qm", "set", str(vmid), "--ide2", f"local:iso/{fortiadc.iso_name(site)},media=cdrom"], log=log)
         h.run(["qm", "set", str(vmid), "--boot", f"order={bus}0"], log=log)
     except Exception:
         log(f"aanmaken mislukt; half-aangemaakte VM {vmid} opruimen")
         h.run(["qm", "destroy", str(vmid), "--purge", "1"], check=False)
         raise
     h.run(["qm", "start", str(vmid)], log=log)
-    log(f"{a['hostname']} start; de eerste boot duurt een paar minuten")
+    log(f"{a['hostname']} start; de day-0-config volgt via de seriële console zodra hij is opgestart")
 
 
 # --------------------------------------------------------------------------

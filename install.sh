@@ -463,8 +463,6 @@ setup_access_user() {
 # FortiADC Lab controller (CT $CTID). Intrekken met: adclab-revoke
 Defaults:$HOST_USER !requiretty
 $HOST_USER ALL=(root) NOPASSWD: $(command -v qm), $(command -v pct), $(command -v pvesh), \\
-  $(command -v install) -m 0644 $WORKDIR/adclab-fad-ams-config.iso /var/lib/vz/template/iso/adclab-fad-ams-config.iso, \\
-  $(command -v install) -m 0644 $WORKDIR/adclab-fad-fra-config.iso /var/lib/vz/template/iso/adclab-fad-fra-config.iso, \\
   $(command -v install) -m 0644 $WORKDIR/adclab-desktop-seed.iso /var/lib/vz/template/iso/adclab-desktop-seed.iso
 EOF
   chmod 440 "$tmp"

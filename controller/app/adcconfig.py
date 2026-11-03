@@ -103,11 +103,12 @@ def mgmt_ip(topo, site) -> str:
 
 
 # --------------------------------------------------------------------------
-# day-0: cloud-init user_data
+# day-0: via de seriële console
 # --------------------------------------------------------------------------
 def bootstrap_config(topo, state, site) -> str:
-    """Minimale config bij de eerste boot: hostname, interfaces, route, DNS en het
-    admin-wachtwoord. De rest komt via SSH, zodat fouten zichtbaar zijn in de UI."""
+    """Minimale config bij de eerste boot (ingetypt op de console): hostname,
+    interfaces, route, DNS en het admin-wachtwoord. De rest komt via SSH, zodat
+    fouten per regel zichtbaar zijn in de UI."""
     a = adc(topo, site)
     wan = topo["fortiadc"]["wan"]
     lines = ["config system global", f"    set hostname {a['hostname']}", "end",

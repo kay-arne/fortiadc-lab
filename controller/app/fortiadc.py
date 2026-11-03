@@ -1,12 +1,11 @@
 """FortiADC's: day-0 bootstrap, verbinding (SSH-CLI en REST) en provisioning.
 
-Doel-versie: FortiADC 7.4 / 7.6 (KVM). Elk datacenter heeft een eigen FortiADC;
-alle functies krijgen het datacenter ('site', bijv. AMS) mee.
+Getest met FortiADC 8.0 (KVM); geschreven voor 7.4 en later. Elk datacenter heeft
+een eigen FortiADC; alle functies krijgen het datacenter ('site', bijv. AMS) mee.
 
-- Day-0 via een cloud-init config drive (OpenStack config-drive v2: licentie in
-  openstack/content/0000, CLI in openstack/latest/user_data), zoals in de
-  FortiADC-VM installatiegids. Pakt de config drive niet (geen management-IP na de
-  boot), dan typt de controller dezelfde CLI via de seriële console van de VM in.
+- Day-0 via de seriële console van de VM (qm terminal): inloggen in de
+  fabrieksstand en de minimale CLI intypen (interfaces, route, DNS, wachtwoord).
+  Een cloud-init config drive werkt op Proxmox niet voor FortiADC (getest).
 - De rest gaat via SSH als gewone CLI (adcconfig.py), regel voor regel, met
   foutdetectie per regel: een onbekende optie in een andere FortiADC-build breekt
   de uitrol niet af maar komt als waarschuwing in de log.
@@ -17,10 +16,7 @@ from __future__ import annotations
 
 import ipaddress
 import re
-import subprocess
-import tempfile
 import time
-from pathlib import Path
 
 import paramiko
 import requests
@@ -36,33 +32,12 @@ CONFIG_FILE = DATA / "fortiadc-config.txt"
 ADMIN_TIMEOUT = 480  # minuten; lab: lang ingelogd blijven in de GUI
 
 
-def iso_name(site) -> str:
-    return f"adclab-fad-{site.lower()}-config.iso"
-
-
 def license_of(site) -> dict:
     """{'mode': none|file|fortiflex, 'file': ..., 'token': ...} voor deze FortiADC."""
     s = get_state()
     return {"mode": s.get("license_mode", "none"),
             "file": (s.get("license_files") or {}).get(site),
             "token": (s.get("fortiflex_tokens") or {}).get(site)}
-
-
-# --------------------------------------------------------------------------
-# config drive
-# --------------------------------------------------------------------------
-def build_config_iso(topo, state, site) -> Path:
-    out = Path(tempfile.mkdtemp(prefix="fadiso-"))
-    work = out / "config-drive"
-    (work / "openstack" / "latest").mkdir(parents=True)
-    (work / "openstack" / "content").mkdir(parents=True)
-    (work / "openstack" / "latest" / "user_data").write_text(adcconfig.bootstrap_config(topo, state, site))
-    lic = license_of(site)
-    if lic["mode"] == "file" and lic["file"]:
-        (work / "openstack" / "content" / "0000").write_text((UPLOADS / lic["file"]).read_text().strip() + "\n")
-    iso = out / iso_name(site)
-    subprocess.run(["genisoimage", "-quiet", "-R", "-r", "-V", "config-2", "-o", str(iso), str(work)], check=True)
-    return iso
 
 
 # --------------------------------------------------------------------------
@@ -83,7 +58,7 @@ def base_url(topo, site) -> str:
 
 def _passwords() -> list[str]:
     """Kandidaten voor admin: het ingestelde wachtwoord, en leeg (fabrieksstand,
-    als de config drive niet is toegepast)."""
+    als de day-0-bootstrap nog niet gedaan is)."""
     pw = get_state().get("adc_admin_password")
     return [pw, ""] if pw else [""]
 
@@ -257,30 +232,50 @@ def api_status(topo, site) -> dict:
 
 
 # --------------------------------------------------------------------------
-# wachten en day-0 fallback
+# wachten en day-0
 # --------------------------------------------------------------------------
-def wait_reachable(log, topo, site, timeout) -> bool:
-    url = base_url(topo, site)
-    log(f"[{site}] wachten tot {url} bereikbaar is (max {timeout // 60} min)...")
+def reachable(topo, site) -> bool:
+    try:
+        requests.get(base_url(topo, site), verify=False, timeout=5)
+        return True
+    except requests.RequestException:
+        return False
+
+
+def wait_reachable(log, topo, site, timeout, quiet=False) -> bool:
+    if not quiet:
+        log(f"[{site}] wachten tot {base_url(topo, site)} bereikbaar is (max {timeout // 60} min)...")
     deadline = time.time() + timeout
     while time.time() < deadline:
-        try:
-            requests.get(url, verify=False, timeout=5)
-            log(f"[{site}] GUI bereikbaar")
+        if reachable(topo, site):
+            if not quiet:
+                log(f"[{site}] GUI bereikbaar")
             return True
-        except requests.RequestException:
-            time.sleep(10)
+        time.sleep(5)
     return False
 
 
+def wait_reboot(log, topo, site):
+    """Na een actie die herstart: eerst wachten tot hij wég is, dan tot hij terug is
+    (anders ziet de controller de oude sessie nog net en gaat hij te vroeg verder)."""
+    if wait_reachable(log, topo, site, 5, quiet=True):
+        deadline = time.time() + 180
+        while time.time() < deadline and reachable(topo, site):
+            time.sleep(3)
+    log(f"[{site}] herstart...")
+    if not wait_reachable(log, topo, site, 900):
+        raise RuntimeError(f"FortiADC {site} kwam niet terug na de herstart.")
+    wait_for_ssh(log, topo, site)
+
+
 def console_bootstrap(log, topo, state, site):
-    """Fallback voor day-0: log in op de seriële console (qm terminal) en typ de
-    bootstrap-CLI. Fabrieksstand: admin zonder wachtwoord; nieuwere builds vragen
-    dan direct een nieuw wachtwoord."""
+    """Day-0 via de seriële console (qm terminal): wacht op de login-prompt (de VM
+    kan nog aan het opstarten zijn), log in en typ de bootstrap-CLI. Fabrieksstand:
+    admin zonder wachtwoord; sommige builds vragen dan direct een nieuw wachtwoord."""
     h = host()
     vmid = adc(topo, site)["vmid"]
     pw = state.get("adc_admin_password") or ""
-    log(f"[{site}] config drive niet toegepast; bootstrap via de seriële console (qm terminal)")
+    log(f"[{site}] day-0 via de seriële console (qm terminal {vmid})")
     client = h._connect()
     chan = client.get_transport().open_session()
     chan.get_pty(width=200)
@@ -298,10 +293,16 @@ def console_bootstrap(log, topo, state, site):
         raise RuntimeError(f"console: '{pattern}' niet gezien; laatste output: {buf[-300:]!r}")
 
     try:
-        for _ in range(3):
+        out, deadline = "", time.time() + 600
+        while time.time() < deadline:  # eerste boot: kan enkele minuten duren
             chan.send("\r")
-            time.sleep(2)
-        out = expect(r"login:\s*$|# $", 120)
+            try:
+                out = expect(r"login:\s*$|# $", 15)
+                break
+            except RuntimeError:
+                continue
+        else:
+            raise RuntimeError(f"console van {site}: geen login-prompt binnen 10 minuten")
         if "login" in out.lower():
             chan.send("admin\r")
             expect(r"password:\s*$", 30)
@@ -372,38 +373,47 @@ def ensure_admin_password(log, topo, site):
 
 
 def license_status(log, topo, site):
+    """Een FortiADC-VM zonder licentie heeft het serienummer FADV0000000TRIAL; met
+    licentie het echte serienummer. Dat is betrouwbaarder dan een 'License'-regel,
+    want die verschilt per versie (8.0 heeft hem niet in 'get system status')."""
     out = ssh_cli(topo, site, ["get system status"])
     m = re.search(r"^\s*(?:VM )?Licen[cs]e(?: Status)?\s*:\s*(.+)$", out, re.I | re.M)
     serial = re.search(r"^\s*Serial-Number\s*:\s*(\S+)", out, re.I | re.M)
     ver = re.search(r"^\s*Version\s*:\s*(.+)$", out, re.I | re.M)
-    info = {"license": m.group(1).strip() if m else "onbekend", "serial": serial.group(1) if serial else "",
-            "version": ver.group(1).strip() if ver else ""}
+    serial = serial.group(1) if serial else ""
+    licensed = bool(serial) and "TRIAL" not in serial.upper()
+    if m and re.search(r"invalid|expired", m.group(1), re.I):
+        licensed = False
+    info = {"license": "geldig" if licensed else ("evaluatie" if serial else "onbekend"), "serial": serial,
+            "version": ver.group(1).strip() if ver else "", "licensed": licensed}
     update_adc_state(site, info=info)
-    log(f"[{site}] FortiADC {info['version'] or '?'} serienummer {info['serial'] or '?'}, licentie: {info['license']}")
+    log(f"[{site}] FortiADC {info['version'] or '?'} serienummer {serial or '?'}, licentie: {info['license']}")
     return info
 
 
 def ensure_license(log, topo, site):
     info = license_status(log, topo, site)
-    if re.search(r"valid", info["license"], re.I) and not re.search(r"invalid", info["license"], re.I):
+    if info["licensed"]:
         return
     lic = license_of(site)
     if lic["mode"] == "file" and lic["file"]:
-        log(f"[{site}] licentie niet geldig na de boot; licentiebestand via REST uploaden (de FortiADC herstart)")
+        log(f"[{site}] nog geen licentie; licentiebestand via REST uploaden (de FortiADC herstart)")
         ok, detail = Rest(topo, site).upload_license((UPLOADS / lic["file"]).read_text())
         log(f"[{site}]   upload: {'ok' if ok else 'mislukt'} {'' if ok else detail}")
+        if not ok:
+            return
     elif lic["mode"] == "fortiflex" and lic["token"]:
         log(f"[{site}] FortiFlex-token activeren (execute vm-license); de FortiADC herstart daarna")
         out = ssh_cli(topo, site, [f"execute vm-license {lic['token']}"], timeout=120)
         log(f"[{site}]   " + " ".join(out.split())[-200:])
-        ok = True
     else:
         log(f"[{site}] ⚠ geen licentie: de FortiADC-VM draait in evaluatiemodus (beperkt).")
         return
-    if ok:
-        time.sleep(60)
-        wait_reachable(log, topo, site, 900)
-        wait_for_ssh(log, topo, site)
+    wait_reboot(log, topo, site)
+    after = license_status(log, topo, site)
+    if not after["licensed"]:
+        log(f"[{site}] ⚠ nog steeds geen geldige licentie (serienummer {after['serial'] or '?'}); "
+            "controleer het token of licentiebestand")
 
 
 # --------------------------------------------------------------------------
@@ -445,14 +455,62 @@ def upload_certificates(log, topo, site) -> list[str]:
     return problems
 
 
+def table_entries(cli: Cli, path: str) -> list[str]:
+    """Namen in een CLI-tabel, ook de voorgedefinieerde ('show' of anders 'get')."""
+    names = []
+    for cmd in (f"show {path}", f"get {path}"):
+        out = cli.run(cmd, timeout=30)
+        names += re.findall(r'edit "([^"]+)"', out) + re.findall(r"==\s*\[\s*([^\]]+?)\s*\]", out)
+        if names:
+            break
+    return list(dict.fromkeys(names))
+
+
+# Welk vooraf gedefinieerd object bij welk niveau hoort. De namen verschillen per
+# FortiADC-versie (7.x: High-Level-Security / Alert-Only); daarom lezen we de lijst
+# op de FortiADC zelf en kiezen we op trefwoord.
+WAF_LEVEL_HINTS = {"High-Level-Security": ("high", "block", "strict"),
+                   "Alert-Only": ("alert", "monitor", "detect")}
+WAF_OBJECTS = {"web-attack-signature": "security waf web-attack-signature",
+               "heuristic-sql-xss-injection-detection": "security waf heuristic-sql-xss-injection-detection"}
+
+
+def resolve_waf(cli: Cli, lines: list[str], log, site) -> list[str]:
+    """Vervang de WAF-niveaus in het profielblok door objecten die echt bestaan;
+    bestaat er geen passend object, laat de regel dan weg (met een melding)."""
+    available = {opt: table_entries(cli, path) for opt, path in WAF_OBJECTS.items()}
+    for opt, names in available.items():
+        log(f"[{site}]   beschikbaar voor {opt}: {', '.join(names) or 'geen'}")
+    out = []
+    for line in lines:
+        m = re.match(r"(\s*)set (\S+) (\S+)\s*$", line)
+        if not m or m.group(2) not in available:
+            out.append(line)
+            continue
+        indent, opt, level = m.groups()
+        names = available[opt]
+        if level in names:
+            out.append(line)
+            continue
+        hints = WAF_LEVEL_HINTS.get(level, ())
+        pick = next((n for h in hints for n in names if h in n.lower()), None)
+        if pick:
+            log(f"[{site}]   {opt}: '{level}' bestaat niet, '{pick}' gebruikt")
+            out.append(f"{indent}set {opt} {pick}")
+        else:
+            log(f"[{site}]   ⚠ {opt}: geen object voor '{level}' op deze FortiADC; regel overgeslagen")
+    return out
+
+
 def gslb_zones(cli: Cli) -> list[str]:
     out = cli.run("show global-dns-server zone", timeout=30)
     return sorted(set(re.findall(r'edit "([^"]+)"', out)))
 
 
 def prepare(log, topo, site):
-    """Bereikbaar, ingelogd, gelicenseerd."""
-    if not wait_reachable(log, topo, site, 600):
+    """Bereikbaar, ingelogd, gelicenseerd. Is het management-IP nog niet bereikbaar,
+    dan is de FortiADC nieuw (of de bootstrap mislukte): dan via de console."""
+    if not wait_reachable(log, topo, site, 20):
         console_bootstrap(log, topo, get_state(), site)
         if not wait_reachable(log, topo, site, 300):
             raise RuntimeError(f"FortiADC {site} niet bereikbaar op het management-IP. Controleer port1 "
@@ -470,6 +528,8 @@ def provision_slb(log, topo, site) -> list[str]:
         cli.apply(["config system global", f"set admin-idle-timeout {ADMIN_TIMEOUT}", "end"], log, "global")
         for title, lines in adcconfig.slb_blocks(topo, site):
             log(f"== [{site}] {title} ({sum(1 for l in lines if l.strip())} regels) ==")
+            if title == "WAF-profielen":
+                lines = resolve_waf(cli, lines, log, site)
             n = cli.apply(lines, log, title)
             log(f"[{site}]   {'✔ toegepast' if not n else f'⚠ {n} regel(s) geweigerd'}")
     finally:

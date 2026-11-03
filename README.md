@@ -58,12 +58,13 @@ de web UI. Draai je de oneliner opnieuw, dan biedt hij **Bijwerken** aan.
 2. **Lab → Volledig lab uitrollen**. De controller:
    1. maakt de bridges `vmbr800`/`810`/`820` (zonder fysieke poort, zonder host-IP);
    2. maakt per datacenter een FortiADC-VM volgens Fortinets KVM-installatiegids: `boot.qcow2` als eerste
-      en `data.qcow2` als tweede VirtIO-disk (vergroot tot 30 GB voor logs), VirtIO-NIC's, 8 GB RAM, plus
-      een eigen cloud-init config drive (config-drive v2: day-0 CLI + licentie);
+      en `data.qcow2` als tweede VirtIO-disk (vergroot tot 30 GB voor logs), VirtIO-NIC's en 8 GB RAM;
    3. bouwt één Debian 12-LXC-template (labapp, BIND, Docker) en kloont daaruit alle containers;
    4. haalt de Docker-images voor Juice Shop en DVWA eenmalig op (container kort aan de uplink);
    5. maakt de desktop-VM uit het officiële Ubuntu cloud image (SHA256 gecontroleerd) met cloud-init;
-   6. zet de configuratie: eerst per FortiADC certificaten (REST) en SLB, content routing en WAF voor zijn
+   6. zet de configuratie. Day-0 gaat via de seriële console (`qm terminal`): inloggen in de fabrieksstand,
+      wachtwoord zetten en management/interfaces/route/DNS intypen; daarna de licentie (FortiFlex-token of
+      `.lic` via REST, de FortiADC herstart). Dan per FortiADC certificaten (REST) en SLB, content routing en WAF voor zijn
       eigen datacenter (CLI via SSH); daarna op beide dezelfde GSLB-config (data centers, servers, pools,
       hosts, DNS-policy). Die volgorde is nodig omdat auto-sync de virtual servers van de andere FortiADC
       ophaalt.
@@ -94,7 +95,7 @@ toont de cloud-init-status. Open hem via de Proxmox-console (automatische login)
 |---|---|
 | `lab/topology.yaml` | **één bron**: segmenten, containers, apps, virtual servers, content routes, GSLB, desktop |
 | `controller/app/adcconfig.py` | genereert de CLI per FortiADC uit de topologie (ook te zien via *Config bekijken*) |
-| `controller/app/fortiadc.py` | config drive, seriële-console-fallback, SSH-CLI met foutdetectie per regel, REST |
+| `controller/app/fortiadc.py` | day-0 via de seriële console, licentie, SSH-CLI met foutdetectie per regel, REST |
 | `controller/app/pki.py` | lab-CA (Name Constraints) en servercertificaten |
 | `controller/app/deployer.py` | Proxmox-orchestratie, BIND-zone, Docker-apps, Ubuntu-desktop (cloud-init) |
 | `controller/app/demo.py` | demo-cockpit |
@@ -134,10 +135,15 @@ op een Proxmox host met een echte FortiADC-VM** gedraaid. Controleer bij de eers
   FortiADC de extra ruimte niet, of start hij niet met een vergrote datadisk, zet `data_disk_gb: 0`.
 - **Geheugen**: 8 GB per FortiADC (Fortinets minimum), dus 16 GB voor beide. Krap op je host? Verlaag
   `memory` in `lab/topology.yaml`; voor een demo werkt 4 GB meestal, maar dat is onder het minimum.
-- **Config drive**: FortiADC documenteert config-drive v2 (`openstack/content/0000` = licentie,
-  `openstack/latest/user_data` = CLI) voor VMware/OpenStack; op KVM/Proxmox is dat niet expliciet
-  beschreven. Pakt hij niet, dan typt de controller de day-0-CLI via de seriële console (`qm terminal`).
-- **CLI-syntax per build**: de config is geschreven voor FortiADC 7.4/7.6. Elke geweigerde regel komt als
+- **Day-0**: een cloud-init config drive (config-drive v2) werkt op Proxmox niet voor FortiADC (getest met
+  8.0.4); de controller gebruikt daarom altijd de seriële console. Is het management-IP al bereikbaar
+  (bijv. bij opnieuw provisionen), dan slaat hij die stap over.
+- **Licentie**: herkend aan het serienummer (`FADV0000000TRIAL` = geen licentie). Een geldige licentie
+  wordt dus niet opnieuw geactiveerd bij een volgende provisioning.
+- **WAF-objecten**: de namen van de voorgedefinieerde signature- en SQLi/XSS-objecten verschillen per
+  versie. De controller leest ze op de FortiADC en kiest het passende niveau (hoog of alleen alert); de log
+  toont welke.
+- **CLI-syntax per build**: de config is geschreven voor FortiADC 7.4 en later, getest met 8.0. Elke geweigerde regel komt als
   waarschuwing in de log en op de Lab-tab (*Toon*), de rest wordt wel toegepast. Pas zo nodig
   `adcconfig.py` aan. Minst zekere opties: `set hostname`/`http-version` in HTTPS-health checks,
   `set location` op data centers, `load-balance-method global-availability` op GSLB-hosts,
