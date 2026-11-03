@@ -619,6 +619,10 @@ def provision_gslb(log, topo, site) -> list[str]:
         zones = gslb_zones(cli)
         log(f"[{site}] GSLB-zones (gegenereerd door de hosts): {', '.join(zones) or 'geen'}")
         if zones:
+            name, ip = adcconfig.nameserver(topo, site)
+            n = cli.apply(adcconfig.zone_settings(topo, site, zones), log, "GSLB-zone")
+            log(f"[{site}] zone: TTL {topo['dns'].get('gslb_ttl', 30)} s, primaire nameserver {name} ({ip})"
+                + ("" if not n else f" — ⚠ {n} instelling(en) geweigerd"))
             n = len(cli.errors)
             cli.apply(adcconfig.dns_policy(zones), log, "DNS-policy")
             if any("move" in e for e in cli.errors[n:]):

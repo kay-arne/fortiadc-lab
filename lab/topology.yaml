@@ -33,6 +33,7 @@ lab:
 dns:
   domain: adclab.internal
   gslb_subdomain: gslb       # -> gslb.adclab.internal, NS = FAD-AMS en FAD-FRA (port2)
+  gslb_ttl: 30               # TTL van GSLB-antwoorden (s): kort genoeg voor een zichtbare failover
   server: dns                # node die BIND draait
 
 # Gemeenschappelijke instellingen van beide FortiADC-VM's. Management (port1, adres per

@@ -342,6 +342,25 @@ def gslb(topo, local) -> list[str]:
     return lines
 
 
+def nameserver(topo, site) -> tuple[str, str]:
+    """(naam, IP) van deze FortiADC als nameserver van het GSLB-subdomein, gelijk aan
+    de delegatie in BIND: ns1 = eerste datacenter, ns2 = tweede, op het port2-adres."""
+    i = next(i for i, a in enumerate(topo["adcs"]) if a["site"] == site)
+    ip = next(p["ip"].split("/")[0] for p in topo["adcs"][i]["ports"] if p["segment"] == "client")
+    return f"ns{i + 1}", ip
+
+
+def zone_settings(topo, site, zones: list[str]) -> list[str]:
+    """Instellingen van de door de GSLB-hosts gegenereerde zone. Zonder deze stap geeft
+    de FortiADC TTL 86400 (een failover blijft dan een dag in caches hangen) en noemt
+    hij zichzelf 'defaultprimary' op 127.0.0.1, wat een resolver kan overnemen."""
+    ttl = topo["dns"].get("gslb_ttl", 30)
+    name, ip = nameserver(topo, site)
+    return _block("global-dns-server zone", [
+        (z, [f"set ttl {ttl}", f"set negative-ttl {ttl}", f"set primary-server-name {name}",
+             f"set primary-server-ip {ip}"]) for z in zones])
+
+
 DEFAULT_POLICY = "DEFAULT_DNS_POLICY"
 
 

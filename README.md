@@ -165,7 +165,9 @@ failover. Aandachtspunten:
   beneden, en de ingebouwde `DEFAULT_DNS_POLICY` (any/any, recursief) staat bovenaan. Daarom schuift de
   controller `DNS-LAB` erboven (`move`); anders beantwoordt de FortiADC GSLB-namen recursief via internet
   (NXDOMAIN met de root-SOA, zonder `aa`-vlag). De global DNS-server zelf (`gds-status`) staat in de
-  fabrieksstand uit en wordt aangezet.
+  fabrieksstand uit en wordt aangezet. Op de gegenereerde zone zet de controller een korte TTL
+  (`dns.gslb_ttl`, standaard 30 s in plaats van 86400) en als primaire nameserver het eigen port2-adres
+  (`ns1`/`ns2`, gelijk aan de delegatie in BIND) in plaats van `defaultprimary` op 127.0.0.1.
 - **GSLB-sync tussen de FortiADC's**: elke FortiADC kent zichzelf als de ingebouwde `DEFAULT_DNS_SERVER`
   (127.0.0.1), die de eigen virtual servers synchroniseert; dat werkt op 8.0.4. Een FortiADC-SLB-server naar
   het eigen management-IP bleef leeg en wordt opgeruimd. De andere FortiADC staat erin als `FAD-<dc>` op zijn
