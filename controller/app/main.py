@@ -444,6 +444,19 @@ def problems():
     return {"problems": fortiadc.problems_all(load_topology())}
 
 
+@app.get("/api/desktop/address")
+def desktop_address():
+    try:
+        return deployer.desktop_address()
+    except Exception as e:  # noqa: BLE001
+        return {"error": str(e)}
+
+
+@app.post("/api/desktop/tune")
+def desktop_tune():
+    return _start("Desktop bijwerken (RDP, geen wizard) en herstarten", deployer.desktop_tune)
+
+
 @app.get("/api/desktop/progress")
 def desktop_progress():
     try:
@@ -501,6 +514,7 @@ def access():
         "adcs": adcs, "adc_user": "admin", "adc_password": get_state().get("adc_admin_password") or "",
         "desktop_user": d["user"], "desktop_password": generated_secret("desktop_password"),
         "desktop_vmid": d["vmid"], "desktop_lab_ip": d["lab_ip"], "ca_fingerprint": fp,
+        "desktop_autologin": bool(d.get("console_autologin")),
         "domain": domain(topo), "gslb_domain": gslb_domain(topo),
         "urls": deployer.desktop_bookmarks(topo),
         "names": [{"host": f"{h}.{domain(topo)}", "vs": vs["id"], "gslb": bool(vs.get("gslb")),

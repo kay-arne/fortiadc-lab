@@ -578,23 +578,60 @@ apt-get install -yq -o Dpkg::Options::=--force-confold ubuntu-desktop-minimal fi
   qemu-guest-agent spice-vdagent dnsutils curl openssl xrdp
 snap remove --purge firefox || true
 systemctl enable --now qemu-guest-agent
-# Automatisch inloggen op de console; geen schermvergrendeling tijdens een demo.
-printf '[daemon]\nAutomaticLoginEnable=true\nAutomaticLogin=__USER__\n' > /etc/gdm3/custom.conf
+bash /root/adclab-desktop-tune.sh
+"""
+
+# Afstelling van de desktop voor demo's. Idempotent: draait bij de eerste boot
+# (cloud-init) en opnieuw via 'Desktop bijwerken' (qemu-guest-agent), zodat een
+# bestaande desktop wijzigingen krijgt zonder herinstallatie.
+DESKTOP_TUNE = r"""set -ux
+export DEBIAN_FRONTEND=noninteractive
+U=__USER__
+# Console: automatisch inloggen alleen als gekozen. Is de gebruiker op de console
+# ingelogd, dan krijgt een RDP-sessie van dezelfde gebruiker een zwart scherm.
+if [ "__AUTOLOGIN__" = yes ]; then
+  printf '[daemon]\nAutomaticLoginEnable=true\nAutomaticLogin=%s\n' "$U" > /etc/gdm3/custom.conf
+else
+  printf '[daemon]\nAutomaticLoginEnable=false\n' > /etc/gdm3/custom.conf
+fi
+# Geen schermvergrendeling of screensaver tijdens een demo; vaste favorieten.
 install -d /etc/dconf/profile /etc/dconf/db/local.d
 printf 'user-db:user\nsystem-db:local\n' > /etc/dconf/profile/user
 printf "[org/gnome/desktop/session]\nidle-delay=uint32 0\n[org/gnome/desktop/screensaver]\nlock-enabled=false\n[org/gnome/shell]\nfavorite-apps=['firefox.desktop', 'org.gnome.Terminal.desktop', 'org.gnome.Nautilus.desktop']\n" \
   > /etc/dconf/db/local.d/00-adclab
 dconf update
 # Geen welkomstwizard (Ubuntu Pro, Livepatch, telemetrie) en geen pop-ups van de
-# update- en crashmelder tijdens een demo. Updates lopen gewoon via unattended-upgrades.
-apt-get purge -yq gnome-initial-setup update-notifier apport || true
-install -d -o __USER__ -g __USER__ /home/__USER__/.config
-echo yes > /home/__USER__/.config/gnome-initial-setup-done
-chown __USER__: /home/__USER__/.config/gnome-initial-setup-done
-pro config set apt_news=false || true
+# update- en crashmelder. Updates lopen gewoon via unattended-upgrades.
+apt-get purge -yq gnome-initial-setup update-notifier apport
+install -d -o "$U" -g "$U" "/home/$U/.config"
+echo yes > "/home/$U/.config/gnome-initial-setup-done"
+chown "$U:" "/home/$U/.config/gnome-initial-setup-done"
+pro config set apt_news=false
+# RDP (xrdp, TCP 3389 op de uplink): dezelfde Ubuntu-sessie als op de console.
+command -v xrdp >/dev/null || apt-get install -yq xrdp
 adduser xrdp ssl-cert
+printf 'export GNOME_SHELL_SESSION_MODE=ubuntu\nexport XDG_CURRENT_DESKTOP=ubuntu:GNOME\nexport XDG_CONFIG_DIRS=/etc/xdg/xdg-ubuntu:/etc/xdg\n' \
+  > "/home/$U/.xsessionrc"
+chown "$U:" "/home/$U/.xsessionrc"
+# colord vraagt in een RDP-sessie steeds om een beheerderswachtwoord; niet voor de demo-gebruiker.
+install -d /etc/polkit-1/rules.d
+cat > /etc/polkit-1/rules.d/45-adclab-colord.rules <<RULES
+polkit.addRule(function(action, subject) {
+  if (action.id.indexOf("org.freedesktop.color-manager.") === 0 && subject.user === "$U") {
+    return polkit.Result.YES;
+  }
+});
+RULES
 systemctl enable xrdp
+systemctl restart xrdp
+echo "desktop afgesteld (autologin __AUTOLOGIN__)"
 """
+
+
+def desktop_tune_script(topo) -> str:
+    d = topo["desktop"]
+    return (DESKTOP_TUNE.replace("__USER__", d["user"])
+            .replace("__AUTOLOGIN__", "yes" if d.get("console_autologin") else "no"))
 
 
 def desktop_macs(topo) -> tuple[str, str]:
@@ -643,6 +680,7 @@ def desktop_seed(topo) -> Path:
             # Resolver-cache uit: elke dig/browser-navigatie ziet het actuele GSLB-antwoord.
             {"path": "/etc/systemd/resolved.conf.d/adclab.conf", "permissions": "0644",
              "content": "[Resolve]\nCache=no\n"},
+            {"path": "/root/adclab-desktop-tune.sh", "permissions": "0700", "content": desktop_tune_script(topo)},
         ],
         "runcmd": [["bash", "-c", DESKTOP_RUNCMD.replace("__USER__", user)]],
         "power_state": {"mode": "reboot", "message": "desktop klaar, herstarten", "condition": True},
@@ -692,6 +730,53 @@ def deploy_desktop(log, topo):
     h.run(["qm", "start", str(vmid)], log=log)
     log("desktop installeert zichzelf via cloud-init (Ubuntu Desktop + Firefox): reken op 15-30 minuten. "
         "Daarna herstart hij en logt automatisch in.")
+
+
+def _guest(vmid, *args, timeout=60) -> dict:
+    """qm guest exec/cmd; geeft de JSON-uitvoer, of {} als de guest agent niet antwoordt."""
+    out = host().run(["qm", "guest", *args], check=False, timeout=timeout)
+    try:
+        return json.loads(out)
+    except ValueError:
+        return {}
+
+
+def desktop_address() -> dict:
+    """IP-adressen van de desktop (via de guest agent): uplink voor RDP, lab-NIC."""
+    topo = load_topology()
+    vmid = topo["desktop"]["vmid"]
+    if not host().exists(vmid):
+        return {"error": "desktop is niet uitgerold"}
+    data = _guest(vmid, "cmd", str(vmid), "network-get-interfaces", timeout=20)
+    if not data:
+        return {"error": "guest agent antwoordt niet (desktop uit of nog aan het installeren)"}
+    ips = {}
+    for nic in data if isinstance(data, list) else []:
+        v4 = [a["ip-address"] for a in nic.get("ip-addresses", []) if a.get("ip-address-type") == "ipv4"]
+        if v4:
+            ips[nic.get("name")] = v4[0]
+    return {"uplink": ips.get("uplink", ""), "lab": ips.get("lab", ""), "all": ips}
+
+
+def desktop_tune(log):
+    """Afstelling (geen wizard, RDP, autologin) toepassen op een draaiende desktop en
+    herstarten, zodat een ingelogde console-sessie RDP niet meer blokkeert."""
+    topo = load_topology()
+    vmid = topo["desktop"]["vmid"]
+    if host().status(vmid) != "running":
+        raise RuntimeError("de desktop draait niet")
+    log("afstelling toepassen via de qemu-guest-agent (kan een paar minuten duren)...")
+    res = _guest(vmid, "exec", str(vmid), "--timeout", "900", "--", "bash", "-c", desktop_tune_script(topo),
+                 timeout=960)
+    if not res:
+        raise RuntimeError("guest agent antwoordt niet; is de desktop klaar met installeren?")
+    for line in (res.get("out-data") or "").strip().splitlines()[-5:]:
+        log(f"  {line}")
+    if res.get("exitcode", 1) != 0:
+        log(f"⚠ exitcode {res.get('exitcode')}: {(res.get('err-data') or '').strip()[-300:]}")
+    log("desktop herstarten")
+    host().run(["qm", "reboot", str(vmid)], log=log)
+    log("klaar; over ~1 minuut bereikbaar via RDP")
 
 
 def desktop_progress() -> str:

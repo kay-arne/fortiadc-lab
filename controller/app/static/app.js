@@ -415,16 +415,34 @@ async function loadAccess() {
           <div class="hint">${esc(f.name)} · GSLB-DNS op ${esc(f.dns_ip)}</div></td></tr>`).join("")}
         <tr><th>Login</th><td><span class="mono">${esc(a.adc_user)}</span> / ${secretRow("acc-adcpw", a.adc_password)}</td></tr></table></div>
     <div class="acc"><h3>Ubuntu desktop <span class="tag">VM ${a.desktop_vmid}</span></h3>
-      <p>Proxmox-console (logt automatisch in) of RDP naar het uplink-adres van de desktop.</p>
-      <table class="kv"><tr><th>Gebruiker</th><td><span class="mono">${esc(a.desktop_user)}</span></td></tr>
+      <p>Neem hem over met een RDP-client (Windows: <i>Extern bureaublad</i>, macOS: <i>Windows App</i>) op het
+        uplink-adres, of via de Proxmox-console. ${a.desktop_autologin
+          ? "De console logt automatisch in; log daar uit voordat je via RDP verbindt."
+          : "Log in met de gegevens hieronder; dezelfde gebruiker kan niet tegelijk op de console én via RDP ingelogd zijn."}</p>
+      <table class="kv"><tr><th>RDP</th><td><span class="mono" id="rdp-addr">-</span>
+          <button class="ghost" id="btn-rdp" type="button">Adres ophalen</button></td></tr>
+        <tr><th>Gebruiker</th><td><span class="mono">${esc(a.desktop_user)}</span></td></tr>
         <tr><th>Wachtwoord</th><td>${secretRow("acc-dpw", a.desktop_password)}</td></tr>
-        <tr><th>Lab-IP</th><td><span class="mono">${esc(a.desktop_lab_ip)}</span></td></tr></table></div>
+        <tr><th>Lab-IP</th><td><span class="mono">${esc(a.desktop_lab_ip)}</span></td></tr></table>
+      <div class="row"><button id="btn-desktop-tune" type="button"
+        title="Wizard uit, RDP afstellen, autologin volgens de topologie; daarna herstart de desktop">Desktop bijwerken en herstarten</button></div></div>
     <div class="acc"><h3>Lab-CA</h3>
       <p>De desktop vertrouwt deze CA al. Op je eigen laptop? Download en vertrouw hem: hij is via
         <i>Name Constraints</i> beperkt tot <code>${esc(a.domain)}</code>.</p>
       <table class="kv"><tr><th>SHA-256</th><td class="mono small">${esc(a.ca_fingerprint || "nog niet aangemaakt")}</td></tr></table>
       <div class="row"><a class="button" href="/ca.crt">fortiadc-lab-root-ca.crt</a></div></div>`;
   bindEyes($("#access"));
+  const loadRdp = async () => {
+    $("#rdp-addr").textContent = "ophalen…";
+    try {
+      const r = await api("/api/desktop/address");
+      $("#rdp-addr").textContent = r.error ? r.error : (r.uplink ? `${r.uplink}:3389` : "geen uplink-adres");
+    } catch (e) { $("#rdp-addr").textContent = e.message; }
+  };
+  $("#btn-rdp").onclick = loadRdp;
+  loadRdp();
+  $("#btn-desktop-tune").onclick = () => confirm("De desktop afstellen en herstarten? Een open sessie wordt afgesloten.")
+    && action("/api/desktop/tune");
   $("#names").innerHTML = `<table><tr><th>Naam</th><th>Virtual server</th><th>VIP's</th><th>DNS</th></tr>${a.names.map((n) => `
     <tr><td><a href="https://${esc(n.host)}/" target="_blank" rel="noopener">${esc(n.host)}</a></td><td>${esc(n.title)}</td>
       <td class="mono">${Object.entries(n.sites).map(([k, v]) => `${esc(k)} ${esc(v)}`).join("<br>")}</td>

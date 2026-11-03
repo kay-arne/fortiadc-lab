@@ -72,7 +72,10 @@ de web UI. Draai je de oneliner opnieuw, dan biedt hij **Bijwerken** aan.
 4. **Toegang & scripts**: logins, de lab-CA om te downloaden, alle namen en de demo-scripts.
 
 De desktop installeert zichzelf (Ubuntu Desktop + Firefox) en is na ~15-30 minuten klaar; de Lab-tab
-toont de cloud-init-status. Open hem via de Proxmox-console (automatische login) of RDP.
+toont de cloud-init-status. Neem hem over met **RDP** (Windows: *Extern bureaublad*, macOS: *Windows App*)
+op zijn uplink-adres: de Toegang-tab haalt dat adres op via de guest agent en toont gebruiker en
+wachtwoord. De Proxmox-console werkt ook. Een bestaande desktop krijgt nieuwe afstellingen (RDP, geen
+welkomstwizard) met **Toegang → Desktop bijwerken en herstarten**, zonder herinstallatie.
 
 ## Demo-scripts
 
@@ -168,8 +171,11 @@ failover. Aandachtspunten:
   (ZFS 2.2+/LVM-thin). Linked clones werken op LVM-thin/ZFS; op `dir`-storage valt de controller terug op
   full clones (meer schijfruimte).
 - **Desktop**: geen welkomstwizard (Ubuntu Pro, Livepatch, telemetrie) en geen pop-ups van de update- en
-  crashmelder (`gnome-initial-setup`, `update-notifier`, `apport` verwijderd). RDP (xrdp) start een aparte
-  GNOME-sessie; log dan eerst uit op de console.
+  crashmelder (`gnome-initial-setup`, `update-notifier`, `apport` verwijderd). RDP via xrdp (TCP 3389 op de
+  uplink) met dezelfde Ubuntu-sessie als op de console. Dezelfde gebruiker kan niet tegelijk op de console
+  en via RDP ingelogd zijn; daarom logt de console standaard **niet** automatisch in
+  (`desktop.console_autologin` in `lab/topology.yaml`). xrdp gebruikt een self-signed certificaat: je
+  RDP-client vraagt daarom eenmalig om het te accepteren.
 - De web UI gebruikt HTTP met een loginformulier (gebruiker `admin`, wachtwoord in
   `/opt/adclab/data/ui_password`): zet hem niet buiten je labnetwerk open.
 

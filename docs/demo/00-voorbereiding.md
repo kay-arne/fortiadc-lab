@@ -19,7 +19,7 @@ medewerkersportaal, een orders-API en een paar oudere webapplicaties die beveili
 
 ## Schermindeling (aanbevolen)
 
-- **Links**: de Ubuntu desktop (Proxmox-console of RDP) met Firefox. De bladwijzerbalk *FortiADC Lab* bevat
+- **Links**: de Ubuntu desktop via **RDP** (adres, gebruiker en wachtwoord op de Toegang-tab van de controller) met Firefox. De bladwijzerbalk *FortiADC Lab* bevat
   alle applicaties. Het certificaat is vertrouwd: geen waarschuwingen.
 - **Rechts**: de GUI van **FAD-AMS** en **FAD-FRA** (elk een tabblad) en het **demo-cockpit** van de controller (tab 3).
 

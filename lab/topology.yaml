@@ -157,6 +157,9 @@ desktop:
   disk_gb: 32
   user: demo
   lab_ip: 10.80.0.10         # tweede NIC op het client-segment; eerste NIC op de uplink (DHCP)
+  # RDP (xrdp) en automatisch inloggen op de console sluiten elkaar uit voor dezelfde
+  # gebruiker. Standaard dus geen autologin: inloggen via RDP of op de console.
+  console_autologin: false
   image_url: https://cloud-images.ubuntu.com/releases/noble/release/ubuntu-24.04-server-cloudimg-amd64.img
   sums_url: https://cloud-images.ubuntu.com/releases/noble/release/SHA256SUMS
 
