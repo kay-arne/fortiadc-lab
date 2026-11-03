@@ -252,7 +252,10 @@ Bevindingen op 8.0.4:
   in het lab gebruikt.
 - Scherm poort 5858 daarnaast af, zodat alleen de FortiADC's die onderling bereiken.
 - *Lab:* `dns.gslb_sync_auth` in `lab/topology.yaml` (standaard `auth_verify`). De controller leest de velden
-  van de setting (`set ?` na het auth-type) en gebruikt het wachtwoordveld dat de versie kent. Na de
+  van de setting (`set ?` na het auth-type) en gebruikt het wachtwoordveld dat de versie kent; vindt hij er
+  geen, dan probeert hij `auth-key`. (Automatiseren: de eerste regel van de contexthulp staat in de ruwe
+  SSH-uitvoer achter de herhaalde invoer, alleen gescheiden door `\r`. Schoon de uitvoer eerst op, anders
+  mis je juist `*auth-key`.) Na de
   GSLB-config controleert hij of elke FortiADC de virtual servers van de andere ziet (`verify_sync()`); zo
   niet, dan zet hij alles op `none` en meldt dat.
 - Let op: een eerder gesynchroniseerde lijst kan blijven staan. Controleer na een wijziging de status, niet

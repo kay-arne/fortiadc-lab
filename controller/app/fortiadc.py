@@ -582,6 +582,10 @@ def setting_fields(cli: Cli, path: str, preset: list[str] = ()) -> list[str]:
     listing = cli.help("set")
     cli.run("end")
     del cli.errors[n:]
+    # De eerste regel van de hulp kan in de ruwe uitvoer achter de herhaalde invoer
+    # ('set ?') staan, alleen gescheiden door \r of escape-codes: eerst opschonen.
+    listing = re.sub(r"\x1b\[[0-9;?]*[A-Za-z]", "", listing).replace("\r", "\n")
+    listing = re.sub(r"\bset \?", "\n", listing)
     # '*' vóór een veld = verplicht (bijv. '*auth-key  Password of this device.')
     fields = re.findall(r"^\s*\*?([a-z][a-z0-9_-]+)\s{2,}\S", listing, re.M)
     return [f for f in dict.fromkeys(fields) if f not in ("set", "unset", "get", "show", "end", "next", "abort")]
@@ -590,8 +594,9 @@ def setting_fields(cli: Cli, path: str, preset: list[str] = ()) -> list[str]:
 def resolve_gslb_secret(cli: Cli, lines: list[str], log, site) -> list[str]:
     """Het veld voor het eigen sync-wachtwoord in 'config global-load-balance setting'
     heet per versie anders (8.0.4: auth-key, 7.4-documentatie: password): lees de
-    velden op de FortiADC zelf en kies op trefwoord. Zonder wachtwoordveld laten we
-    de setting op zijn stand; de sleutel staat dan alleen op de serverregel."""
+    velden op de FortiADC zelf en kies op trefwoord. Vinden we geen ander
+    wachtwoordveld, dan proberen we de standaardnaam; een weigering staat dan in de
+    log en verify_sync() vangt een mislukte sync op."""
     field = adcconfig.GSLB_SECRET_FIELD
     if not any(l.strip().startswith(f"set {field} ") for l in lines):
         return lines
@@ -601,12 +606,11 @@ def resolve_gslb_secret(cli: Cli, lines: list[str], log, site) -> list[str]:
     if not fields or field in fields:
         return lines
     pick = next((f for h in SECRET_HINTS for f in fields if h in f and f != "auth-type"), None)
+    if not pick:
+        log(f"[{site}]   sync-wachtwoord: '{field}' niet in de veldenlijst; toch geprobeerd")
+        return lines
     start = next(i for i, l in enumerate(lines) if l.strip() == "config global-load-balance setting")
     stop = next(i for i in range(start, len(lines)) if lines[i].strip() == "end")
-    if not pick:
-        log(f"[{site}]   ⚠ sync-wachtwoord: geen wachtwoordveld in de setting; die blijft ongewijzigd, "
-            "sleutel alleen op de serverregel")
-        return lines[:start] + lines[stop + 1:]
     log(f"[{site}]   sync-wachtwoord: veld '{pick}' gebruikt (geen '{field}' op deze versie)")
     return [l.replace(f"set {field} ", f"set {pick} ", 1) if start < i < stop else l
             for i, l in enumerate(lines)]
