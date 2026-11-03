@@ -274,14 +274,14 @@ def gslb_auth(topo) -> str:
 
 
 def gslb_key() -> str:
-    """Gedeeld wachtwoord voor de GSLB-sync. Het moet op beide FortiADC's gelijk zijn:
-    in 'config global-load-balance setting' (password) én als auth-key op de server
-    die naar de andere FortiADC wijst."""
+    """Gedeelde sleutel voor de GSLB-sync: auth-key op de server die naar de andere
+    FortiADC wijst, en (7.4) het wachtwoord in 'config global-load-balance setting'.
+    8.0.4 heeft daar geen wachtwoordveld (zie fortiadc.resolve_gslb_secret)."""
     return generated_secret("gslb_sync_key", 16)
 
 
-# Veldnaam volgens de 7.4-documentatie; 8.0.4 weigert hem (-284). De provisioning
-# zoekt de echte naam op de FortiADC zelf op (fortiadc.resolve_gslb_secret).
+# Veldnaam volgens de 7.4-documentatie; 8.0.4 kent hem niet (-284). De provisioning
+# leest de velden op de FortiADC zelf (fortiadc.resolve_gslb_secret).
 GSLB_SECRET_FIELD = "password"
 
 

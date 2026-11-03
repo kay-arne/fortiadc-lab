@@ -179,8 +179,9 @@ failover. Aandachtspunten:
   (127.0.0.1), die de eigen virtual servers synchroniseert; dat werkt op 8.0.4. Een FortiADC-SLB-server naar
   het eigen management-IP bleef leeg en wordt opgeruimd. De andere FortiADC staat erin als `FAD-<dc>` op zijn
   management-IP (TCP 5858, auto-sync). De GSLB-pools verwijzen naar de gesynchroniseerde namen
-  (`VS-SHOP-AMS`). De sync wordt geauthenticeerd (`dns.gslb_sync_auth`, standaard `auth_verify`, met hetzelfde
-  wachtwoord in `config global-load-balance setting` op beide). Na de provisioning controleert de controller
+  (`VS-SHOP-AMS`). De serverregel krijgt `auth_verify` met een gedeelde `auth-key` (`dns.gslb_sync_auth`); op 8.0.4
+  eist de luisterende kant (`config global-load-balance setting`) daar nog niets mee, dus scherm poort 5858
+  af. Na de provisioning controleert de controller
   of de sync werkt en valt hij zo nodig terug op `none`. Zie [docs/fortiadc-praktijk.md](docs/fortiadc-praktijk.md).
 - **REST**: certificaatupload via `/api/upload/certificate_local` en client-SSL-profielen via
   `/api/load_balance_client_ssl_profile`, zoals Fortinets Ansible-collectie het doet.

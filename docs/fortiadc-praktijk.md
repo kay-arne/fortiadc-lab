@@ -212,39 +212,42 @@ Controle: `get global-load-balance servers FAD-FRA` toont onderaan de gesynchron
 
 ### Authenticatie van de sync 🟡
 
-Met alleen `auth-type TCP_MD5SIG` + `auth-key` op de server bleef de virtual-server-list leeg; met
-`auth-type none` werd hij gevuld. De ontbrekende helft zit in **`config global-load-balance setting`**: daar
-staan het auth-type en het **wachtwoord van de FortiADC zelf**. Dat wachtwoord moet op beide FortiADC's
-gelijk zijn en gelijk aan de `auth-key` op de server die naar de andere wijst. Anders *"will not be able to
-sync"* (CLI-reference).
+Twee plekken hebben een `auth-type` (`none`, `TCP_MD5SIG`, `auth_verify`):
+
+| Waar | Wat | 8.0.4 |
+|---|---|---|
+| `config global-load-balance servers` → `edit FAD-<ander>` | hoe déze FortiADC zich meldt bij de ander: `auth-type` + `auth-key` | ✅ `auth_verify` + `auth-key` geaccepteerd, sync werkt |
+| `config global-load-balance setting` | wat de luisterende kant (poort 5858) eist | ⚠ geen wachtwoordveld; `auth_verify` wordt bij `end` geweigerd |
+
+De 7.4-documentatie noemt in de setting een `password` dat gelijk moet zijn aan de `auth-key` van de ander.
+**8.0.4 kent dat veld niet** (`set password` → *-284*). Na `set auth-type auth_verify` verschijnen alleen
+`ca-verify` en `user-defined-certificate` (beide enable/disable), en `end` geeft dan
+*-56 Empty value is not allowed*. De setting blijft dus op `none`:
 
 ```
-config global-load-balance setting       # op BEIDE FortiADC's, zelfde wachtwoord
-    set auth-type auth_verify
-    set password <gedeeld-wachtwoord>
-end
+adclab-fad-ams # get global-load-balance setting
+auth-type                     : none
+user-defined-certificate      : disable
+ca-verify                     : disable
+port                          : 5858
 ```
 
-- **`auth_verify`** heeft de voorkeur: de sleutel gaat versleuteld na de TCP-handshake en werkt ook met NAT
-  ertussen. `TCP_MD5SIG` werkt niet door NAT heen.
-- ✅ **8.0.4 kent het veld `password` niet**: `set password …` geeft *-284 CLI parsing error* en de
-  afsluitende `end` daarna *-56 Empty value is not allowed* (met `auth_verify` is een wachtwoord verplicht).
-  `auth-type` zelf wordt wel geaccepteerd. Zoek de juiste veldnaam op met:
-  ```
-  config global-load-balance setting
-      set auth-type auth_verify
-      set ?            # toont de velden, ook het wachtwoordveld dat pas na auth-type verschijnt
-  ```
-- ✅ Zonder geldig wachtwoord blijft de sync leeg (`ontbreekt FAD-FRA/VS-SHOP-FRA`); met `auth-type none`
-  staan de virtual servers er binnen ~1 minuut weer in.
-- 🟡 Nog te bevestigen: welke veldnaam 8.0.4 wel gebruikt en of de sync daarmee werkt. De controller leest
-  de velden met `set ?` en kiest het wachtwoordveld zelf; de log toont *velden in global-load-balance
-  setting: …*.
-- *Lab:* `dns.gslb_sync_auth` in `lab/topology.yaml` (standaard `auth_verify`). Na de GSLB-config
-  controleert de controller of elke FortiADC de virtual servers van de andere ziet (`verify_sync()`). Zo niet,
-  dan zet hij beide op `none` en meldt dat.
-- Let op: of een eerder gesynchroniseerde lijst leeg wordt als de authenticatie later faalt, is onbekend.
-  Controleer na een wijziging de status, niet alleen of de namen er nog staan.
+Gevolg: met `auth_verify` + `auth-key` op de serverregel synchroniseert het wel, maar de luisterende kant
+**eist niets**. Dit is dus geen bescherming, alleen een sleutel die meegestuurd wordt.
+
+- 🟡 Open: hoe 8.0.4 de luisterende kant wél laat controleren. Waarschijnlijk met certificaten
+  (`user-defined-certificate enable` + een eigen certificaat, `ca-verify enable` + een CA) in plaats van met
+  een wachtwoord. Te onderzoeken met `set user-defined-certificate enable` en dan `set ?` (welk veld
+  verschijnt er), en hetzelfde voor `ca-verify`.
+- In de tussentijd: zet de sync over een **afgeschermd managementnetwerk** (alleen de FortiADC's onderling
+  op poort 5858, met een trusted host of firewallregel). Dat is in productie sowieso de basis.
+- `TCP_MD5SIG` werkt niet door NAT heen; `auth_verify` wel.
+- *Lab:* `dns.gslb_sync_auth` in `lab/topology.yaml` (standaard `auth_verify`). De controller leest de velden
+  van de setting (`set ?` na het auth-type). Is er geen wachtwoordveld, zoals op 8.0.4, dan laat hij de
+  setting ongemoeid en zet hij de sleutel alleen op de serverregel. Na de GSLB-config controleert hij of elke
+  FortiADC de virtual servers van de andere ziet (`verify_sync()`); zo niet, dan zet hij alles op `none`.
+- Let op: een eerder gesynchroniseerde lijst kan blijven staan. Controleer na een wijziging de status, niet
+  alleen of de namen er nog staan.
 
 ### Pools en hosts ✅
 
@@ -484,7 +487,7 @@ TTL-instelling pakt en, tijdens een failover, wanneer het antwoord wisselt.
 - [ ] Tijdzone (`set zone`, check met `?`) en NTP
 - [ ] WAF-profiel: `heuristic-sql-xss-injection-detect` (8.0)
 - [ ] GSLB: eigen FortiADC = `DEFAULT_DNS_SERVER` (met datacenter); de andere als FortiADC-SLB, port 5858
-- [ ] Sync-authenticatie: `config global-load-balance setting` (auth-type + wachtwoordveld, naam per versie: `set ?`) op beide, gelijk aan de `auth-key`
+- [ ] Sync-authenticatie: `auth-type` + `auth-key` op de serverregel; controleer met `get global-load-balance setting` of de luisterende kant iets eist (8.0.4: nee, zie 6) en scherm poort 5858 af
 - [ ] Controle: `get global-load-balance servers <ander>` toont de virtual servers
 - [ ] GSLB-hosts: `domain-name` met punt; `weight` of `global-availability`
 - [ ] `config global-dns-server general` → `gds-status enable`
