@@ -280,10 +280,15 @@ def gslb_key() -> str:
     return generated_secret("gslb_sync_key", 16)
 
 
+# Veldnaam volgens de 7.4-documentatie; 8.0.4 weigert hem (-284). De provisioning
+# zoekt de echte naam op de FortiADC zelf op (fortiadc.resolve_gslb_secret).
+GSLB_SECRET_FIELD = "password"
+
+
 def gslb_setting(auth) -> list[str]:
     lines = ["config global-load-balance setting", f"    set auth-type {auth}"]
     if auth != "none":
-        lines.append(f"    set password {gslb_key()}")
+        lines.append(f"    set {GSLB_SECRET_FIELD} {gslb_key()}")
     return lines + ["end"]
 
 

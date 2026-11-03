@@ -227,8 +227,19 @@ end
 
 - **`auth_verify`** heeft de voorkeur: de sleutel gaat versleuteld na de TCP-handshake en werkt ook met NAT
   ertussen. `TCP_MD5SIG` werkt niet door NAT heen.
-- 🟡 Nog te bevestigen op 8.0.4 of de sync hiermee tot stand komt (de veldnaam `password` komt uit de
-  documentatie).
+- ✅ **8.0.4 kent het veld `password` niet**: `set password …` geeft *-284 CLI parsing error* en de
+  afsluitende `end` daarna *-56 Empty value is not allowed* (met `auth_verify` is een wachtwoord verplicht).
+  `auth-type` zelf wordt wel geaccepteerd. Zoek de juiste veldnaam op met:
+  ```
+  config global-load-balance setting
+      set auth-type auth_verify
+      set ?            # toont de velden, ook het wachtwoordveld dat pas na auth-type verschijnt
+  ```
+- ✅ Zonder geldig wachtwoord blijft de sync leeg (`ontbreekt FAD-FRA/VS-SHOP-FRA`); met `auth-type none`
+  staan de virtual servers er binnen ~1 minuut weer in.
+- 🟡 Nog te bevestigen: welke veldnaam 8.0.4 wel gebruikt en of de sync daarmee werkt. De controller leest
+  de velden met `set ?` en kiest het wachtwoordveld zelf; de log toont *velden in global-load-balance
+  setting: …*.
 - *Lab:* `dns.gslb_sync_auth` in `lab/topology.yaml` (standaard `auth_verify`). Na de GSLB-config
   controleert de controller of elke FortiADC de virtual servers van de andere ziet (`verify_sync()`). Zo niet,
   dan zet hij beide op `none` en meldt dat.
@@ -473,7 +484,7 @@ TTL-instelling pakt en, tijdens een failover, wanneer het antwoord wisselt.
 - [ ] Tijdzone (`set zone`, check met `?`) en NTP
 - [ ] WAF-profiel: `heuristic-sql-xss-injection-detect` (8.0)
 - [ ] GSLB: eigen FortiADC = `DEFAULT_DNS_SERVER` (met datacenter); de andere als FortiADC-SLB, port 5858
-- [ ] Sync-authenticatie: `config global-load-balance setting` (auth-type + password) op beide, gelijk aan de `auth-key`
+- [ ] Sync-authenticatie: `config global-load-balance setting` (auth-type + wachtwoordveld, naam per versie: `set ?`) op beide, gelijk aan de `auth-key`
 - [ ] Controle: `get global-load-balance servers <ander>` toont de virtual servers
 - [ ] GSLB-hosts: `domain-name` met punt; `weight` of `global-availability`
 - [ ] `config global-dns-server general` → `gds-status enable`

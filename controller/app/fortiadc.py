@@ -568,6 +568,51 @@ def resolve_waf(cli: Cli, lines: list[str], log, site) -> list[str]:
     return out
 
 
+SECRET_HINTS = ("password", "passwd", "secret", "key", "psk")
+
+
+def setting_fields(cli: Cli, path: str, preset: list[str] = ()) -> list[str]:
+    """Veldnamen binnen 'config <path>' volgens de contexthulp ('set ?'). Sommige
+    velden verschijnen pas als een ander veld gezet is (preset, bijv. auth-type);
+    fouten van deze verkenning tellen niet mee."""
+    n = len(cli.errors)
+    cli.run(f"config {path}")
+    for line in preset:
+        cli.run(line.strip())
+    listing = cli.help("set")
+    cli.run("end")
+    del cli.errors[n:]
+    fields = re.findall(r"^\s*([a-z][a-z0-9_-]+)\s{2,}\S", listing, re.M)
+    return [f for f in dict.fromkeys(fields) if f not in ("set", "unset", "get", "show", "end", "next", "abort")]
+
+
+def resolve_gslb_secret(cli: Cli, lines: list[str], log, site) -> list[str]:
+    """Het veld voor het sync-wachtwoord in 'config global-load-balance setting' heet
+    niet in elke versie 'password' (8.0.4 weigert die naam): lees de velden op de
+    FortiADC zelf en kies op trefwoord."""
+    field = adcconfig.GSLB_SECRET_FIELD
+    if not any(l.strip().startswith(f"set {field} ") for l in lines):
+        return lines
+    preset = [l for l in lines if l.strip().startswith("set auth-type ")][:1]
+    fields = setting_fields(cli, "global-load-balance setting", preset)
+    log(f"[{site}]   velden in global-load-balance setting: {', '.join(fields) or 'onbekend'}")
+    if not fields or field in fields:
+        return lines
+    pick = next((f for h in SECRET_HINTS for f in fields if h in f and f != "auth-type"), None)
+    if pick:
+        log(f"[{site}]   sync-wachtwoord: veld '{pick}' gebruikt (geen '{field}' op deze versie)")
+    else:
+        log(f"[{site}]   ⚠ sync-wachtwoord: geen wachtwoordveld gevonden; regel overgeslagen")
+    out = []
+    for line in lines:
+        if line.strip().startswith(f"set {field} "):
+            if not pick:
+                continue
+            line = line.replace(f"set {field} ", f"set {pick} ", 1)
+        out.append(line)
+    return out
+
+
 def gslb_zones(cli: Cli) -> list[str]:
     out = cli.run("show global-dns-server zone", timeout=30)
     return sorted(set(re.findall(r'edit "([^"]+)"', out)))
@@ -609,6 +654,7 @@ def provision_gslb(log, topo, site, auth=None) -> list[str]:
     try:
         for title, lines in adcconfig.gslb_blocks(topo, site, auth):
             log(f"== [{site}] {title} ==")
+            lines = resolve_gslb_secret(cli, lines, log, site)
             n = cli.apply(lines, log, title)
             log(f"[{site}]   {'✔ toegepast' if not n else f'⚠ {n} regel(s) geweigerd'}")
         n = len(cli.errors)
