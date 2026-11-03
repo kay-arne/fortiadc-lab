@@ -126,10 +126,13 @@ toevoegen; DNS, certificaat, pool, health check, VS en (optioneel) GSLB volgen v
 - **Reproduceerbaar**: vaste image-tags, gecontroleerde downloads (SHA256 Ubuntu-image, fingerprint van
   Mozilla's APT-sleutel), idempotente provisioning (opnieuw toepassen mag altijd).
 
-## Om op te letten (nog niet op echte hardware getest)
+## Status en aandachtspunten
 
-Deze eerste versie is lokaal gecontroleerd (syntax, gegenereerde config, PKI, webapp, API), maar **nog niet
-op een Proxmox host met een echte FortiADC-VM** gedraaid. Controleer bij de eerste uitrol vooral:
+**Uitgerold op Proxmox met FortiADC-KVM 8.0.4** (twee VM's, FortiFlex): day-0 via de console,
+licentie-activatie, certificaten en client-SSL-profielen via REST, en de volledige CLI-config (SLB, content
+routing, WAF, GSLB en DNS-policy) zonder geweigerde regels. De Ubuntu desktop komt op met GUI.
+**Nog niet functioneel gecontroleerd**: de GSLB-antwoorden en de auto-sync tussen de FortiADC's in een
+failover. Aandachtspunten:
 
 - **Disks**: `data.qcow2` wordt na het importeren vergroot (`data_disk_gb` in `lab/topology.yaml`). Gebruikt
   FortiADC de extra ruimte niet, of start hij niet met een vergrote datadisk, zet `data_disk_gb: 0`.
@@ -143,22 +146,30 @@ op een Proxmox host met een echte FortiADC-VM** gedraaid. Controleer bij de eers
 - **WAF-objecten**: de namen van de voorgedefinieerde signature- en SQLi/XSS-objecten verschillen per
   versie. De controller leest ze op de FortiADC en kiest het passende niveau (hoog of alleen alert); de log
   toont welke.
-- **CLI-syntax per build**: de config is geschreven voor FortiADC 7.4 en later, getest met 8.0. Elke geweigerde regel komt als
-  waarschuwing in de log en op de Lab-tab (*Toon*), de rest wordt wel toegepast. Pas zo nodig
-  `adcconfig.py` aan. Minst zekere opties: `set hostname`/`http-version` in HTTPS-health checks,
-  `set location` op data centers, `load-balance-method global-availability` op GSLB-hosts,
-  `listen-on-all-interface` en de policy-velden van de global DNS.
+- **CLI-syntax per build**: de config is geschreven voor FortiADC 7.4 en later en wordt op 8.0.4 volledig
+  geaccepteerd. Wat 8.0 anders wil dan de oudere documentatie: `domain-name` van een GSLB-host met
+  afsluitende punt, `load-balance-method weight` (niet `none`) en `heuristic-sql-xss-injection-detect` in het
+  WAF-profiel. Voor zulke verschillen heeft de controller een terugvallijst (`CLI_ALTERNATIVES` in
+  `fortiadc.py`). Elke geweigerde regel komt als waarschuwing in de log en op de Lab-tab (*Toon*); de rest
+  wordt wel toegepast.
+- **GSLB-zone**: de hosts genereren de zone `fqdn_generate_gslb.adclab.internal.`; de controller leest
+  die naam terug en hangt hem aan de DNS-policy `DNS-LAB`.
 - **GSLB-sync tussen de FortiADC's**: de servers `FAD-AMS`/`FAD-FRA` gebruiken het management-IP, TCP-MD5
   met een gedeelde sleutel en auto-sync. Controleer of de auto-sync de virtual servers ophaalt onder hun
-  eigen naam (`VS-SHOP-AMS`): de GSLB-pools verwijzen daarnaar (`server-member-name`). Lukt de
-  TCP-MD5-authenticatie niet, zet dan in `adcconfig.gslb()` tijdelijk `auth-type none`.
+  eigen naam (`VS-SHOP-AMS`): de GSLB-pools verwijzen daarnaar (`server-member-name`). De config wordt
+  geaccepteerd; controleer in de GUI (*Global Load Balance → Servers*) of de sync ook echt status ophaalt.
+  Lukt de TCP-MD5-authenticatie niet, zet dan in `adcconfig.gslb()` tijdelijk `auth-type none`.
 - **REST**: certificaatupload via `/api/upload/certificate_local` en client-SSL-profielen via
   `/api/load_balance_client_ssl_profile`, zoals Fortinets Ansible-collectie het doet.
-- **FortiFlex** voor FortiADC wordt na de boot geactiveerd met `execute vm-license <token>` (niet geverifieerd).
+- **FortiFlex**: na de day-0 geactiveerd met `execute vm-license <token>` (werkt op 8.0.4; de FortiADC
+  herstart). Een gelicenseerde FortiADC herken je aan een echt serienummer (zonder licentie:
+  `FADV0000000TRIAL`); die wordt bij een volgende provisioning niet opnieuw geactiveerd.
 - **Docker in LXC** (Juice Shop, DVWA) vraagt `nesting=1,keyctl=1` en een storage met overlay-ondersteuning
   (ZFS 2.2+/LVM-thin). Linked clones werken op LVM-thin/ZFS; op `dir`-storage valt de controller terug op
   full clones (meer schijfruimte).
-- **Desktop**: RDP (xrdp) start een aparte GNOME-sessie; log dan eerst uit op de console.
+- **Desktop**: geen welkomstwizard (Ubuntu Pro, Livepatch, telemetrie) en geen pop-ups van de update- en
+  crashmelder (`gnome-initial-setup`, `update-notifier`, `apport` verwijderd). RDP (xrdp) start een aparte
+  GNOME-sessie; log dan eerst uit op de console.
 - De web UI gebruikt HTTP met een loginformulier (gebruiker `admin`, wachtwoord in
   `/opt/adclab/data/ui_password`): zet hem niet buiten je labnetwerk open.
 

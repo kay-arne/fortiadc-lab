@@ -219,7 +219,9 @@ def content_routes(topo, site) -> list[str]:
 
 def waf_profiles() -> list[str]:
     return _block("security waf profile", [
-        (name, [f"set web-attack-signature {level}", f"set heuristic-sql-xss-injection-detection {level}",
+        # 'heuristic-sql-xss-injection-detect' is de naam in 8.0 (getest); de controller
+        # valt terug op '...-detection' (oudere documentatie) als hij die weigert.
+        (name, [f"set web-attack-signature {level}", f"set heuristic-sql-xss-injection-detect {level}",
                 f"set desc {q(desc)}"])
         for name, (level, desc) in WAF_PROFILES.items()])
 

@@ -90,7 +90,8 @@ CLI_ERROR = re.compile(r"(command parse error|parse error before|unknown action|
 # Opties die per FortiADC-versie anders heten. Weigert de FortiADC een regel, dan
 # probeert de controller deze schrijfwijzen (in volgorde) voor hij het als fout telt.
 CLI_ALTERNATIVES = [
-    # 8.0: het veld heet in Fortinets eigen voorbeeld '...-detect'
+    # WAF-heuristiek: '...-detect' in 8.0 (getest), '...-detection' in oudere documentatie
+    (re.compile(r"^set heuristic-sql-xss-injection-detect (.+)$"), [r"set heuristic-sql-xss-injection-detection \1"]),
     (re.compile(r"^set heuristic-sql-xss-injection-detection (.+)$"), [r"set heuristic-sql-xss-injection-detect \1"]),
     # GSLB-host: gewogen heet 'weight' (8.0) of 'none' (oudere documentatie)
     (re.compile(r"^set load-balance-method weight$"), ["set load-balance-method none"]),
@@ -272,7 +273,8 @@ def reachable(topo, site) -> bool:
 
 def wait_reachable(log, topo, site, timeout, quiet=False) -> bool:
     if not quiet:
-        log(f"[{site}] wachten tot {base_url(topo, site)} bereikbaar is (max {timeout // 60} min)...")
+        limit = f"{timeout // 60} min" if timeout >= 60 else f"{timeout} s"
+        log(f"[{site}] wachten tot {base_url(topo, site)} bereikbaar is (max {limit})...")
     deadline = time.time() + timeout
     while time.time() < deadline:
         if reachable(topo, site):
@@ -504,7 +506,7 @@ def table_entries(cli: Cli, path: str) -> list[str]:
 WAF_LEVEL_HINTS = {"High-Level-Security": ("high", "block", "strict"),
                    "Alert-Only": ("alert", "monitor", "detect")}
 WAF_OBJECTS = {"web-attack-signature": "security waf web-attack-signature",
-               "heuristic-sql-xss-injection-detection": "security waf heuristic-sql-xss-injection-detection"}
+               "heuristic-sql-xss-injection-detect": "security waf heuristic-sql-xss-injection-detection"}
 
 
 def resolve_waf(cli: Cli, lines: list[str], log, site) -> list[str]:

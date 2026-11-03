@@ -585,6 +585,13 @@ printf 'user-db:user\nsystem-db:local\n' > /etc/dconf/profile/user
 printf "[org/gnome/desktop/session]\nidle-delay=uint32 0\n[org/gnome/desktop/screensaver]\nlock-enabled=false\n[org/gnome/shell]\nfavorite-apps=['firefox.desktop', 'org.gnome.Terminal.desktop', 'org.gnome.Nautilus.desktop']\n" \
   > /etc/dconf/db/local.d/00-adclab
 dconf update
+# Geen welkomstwizard (Ubuntu Pro, Livepatch, telemetrie) en geen pop-ups van de
+# update- en crashmelder tijdens een demo. Updates lopen gewoon via unattended-upgrades.
+apt-get purge -yq gnome-initial-setup update-notifier apport || true
+install -d -o __USER__ -g __USER__ /home/__USER__/.config
+echo yes > /home/__USER__/.config/gnome-initial-setup-done
+chown __USER__: /home/__USER__/.config/gnome-initial-setup-done
+pro config set apt_news=false || true
 adduser xrdp ssl-cert
 systemctl enable xrdp
 """
