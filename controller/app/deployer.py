@@ -713,9 +713,14 @@ def deploy_desktop(log, topo):
     up_mac, lab_mac = desktop_macs(topo)
     try:
         log(f"desktop VM {vmid} aanmaken")
+        # UEFI (OVMF, q35) zoals de cloud-image bedoeld is: met SeaBIOS kan een grub-update
+        # (cloud-init package_upgrade) GRUB op een niet-bestaand boot device zetten, met een
+        # bootloop als gevolg. serial0: de kernel logt ook naar ttyS0 (qm terminal).
         h.run(["qm", "create", str(vmid), "--name", vm_name(topo, d["name"]), "--ostype", "l26", "--cpu", "host",
+               "--machine", "q35", "--bios", "ovmf",
+               "--efidisk0", f"{hcfg['storage']}:1,efitype=4m,pre-enrolled-keys=0",
                "--cores", str(d["cores"]), "--memory", str(d["memory"]), "--scsihw", "virtio-scsi-single",
-               "--vga", "virtio", "--agent", "enabled=1", "--tags", "adclab", "--onboot", "1",
+               "--vga", "virtio", "--serial0", "socket", "--agent", "enabled=1", "--tags", "adclab", "--onboot", "1",
                "--net0", f"virtio={up_mac},bridge={topo['lab']['uplink_bridge']}{uplink_tag(topo)},firewall=0",
                "--net1", f"virtio={lab_mac},bridge={client['bridge']},firewall=0",
                "--description", "Ubuntu desktop (FortiADC Lab): vertrouwt de lab-CA, gebruikt de lab-DNS"], log=log)

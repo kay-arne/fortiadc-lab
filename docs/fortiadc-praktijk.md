@@ -481,6 +481,7 @@ TTL-instelling pakt en, tijdens een failover, wanneer het antwoord wisselt.
 | Onderwerp | Bevinding / juiste aanpak | Status |
 |---|---|---|
 | Ubuntu cloud image + cloud-init (NoCloud-ISO `cidata`) | werkt op Proxmox, ook met `ubuntu-desktop-minimal` | ✅ |
+| Firmware | Boot de cloud image met **UEFI** (`--machine q35 --bios ovmf --efidisk0 <storage>:1,efitype=4m,pre-enrolled-keys=0`). Met SeaBIOS bleef de desktop na de installatie (met `package_upgrade`) in een bootloop hangen; vermoedelijk een grub-update naar een verkeerd boot device. Zet er `--serial0 socket` bij: de kernel logt naar ttyS0, te lezen met `qm terminal`. | 🟡 |
 | Firefox en eigen CA | gebruik de **deb uit Mozilla's APT-repo**; de snap leest geen enterprise policies/CA's uit `/etc`. Policy `Certificates.Install` + `ImportEnterpriseRoots`. | ✅ |
 | Firefox en lab-DNS | zet **DNS-over-HTTPS uit** via policy, anders omzeilt Firefox de lab-DNS | ✅ |
 | Split DNS | netplan: lab-NIC met `nameservers.search: [<labdomein>]` → systemd-resolved stuurt alleen dat domein naar de lab-DNS | ✅ |
