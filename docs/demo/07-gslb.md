@@ -6,7 +6,8 @@ beantwoorden ze de DNS en weten ze van elkaar welke applicaties gezond zijn. Val
 zijn FortiADC weg, dan neemt het andere het volledig over.
 
 **Duur:** 15 minuten · **Objecten:** DNS-zone `adclab.internal` (BIND), delegatie `gslb.adclab.internal` →
-beide FortiADC's, GSLB-servers `FAD-AMS` / `FAD-FRA` (type *FortiADC-SLB*, auto-sync), host `GH-SHOP`
+beide FortiADC's, GSLB-servers `DEFAULT_DNS_SERVER` (de FortiADC zelf) en `FAD-<ander datacenter>`
+(type *FortiADC-SLB*, auto-sync), host `GH-SHOP`
 (global availability: eerst `GP-SHOP-AMS`, dan `GP-SHOP-FRA`)
 
 ## Hoe het in elkaar zit
@@ -26,9 +27,10 @@ desktop ──► lab-DNS (BIND, 10.80.0.53)
 
 - **Beide FortiADC's zijn authoritative** voor `gslb.adclab.internal` en hebben dezelfde GSLB-configuratie
   (data centers, servers, pools, hosts). Het maakt niet uit wie de vraag krijgt: het antwoord is gelijk.
-- **Auto-sync**: elke FortiADC staat als GSLB-server van het type *FortiADC-SLB* in de config (ook zichzelf)
-  en haalt van de ander de virtual servers en hun status op. Heeft `VS-SHOP-AMS` geen gezonde poolleden
-  meer, dan weet `FAD-FRA` dat ook.
+- **Auto-sync**: elke FortiADC kent zijn eigen virtual servers via de ingebouwde GSLB-server
+  `DEFAULT_DNS_SERVER`, en de andere FortiADC als GSLB-server van het type *FortiADC-SLB* (`FAD-FRA` op
+  FAD-AMS, `FAD-AMS` op FAD-FRA). Van die server haalt hij de virtual servers en hun status op. Heeft
+  `VS-SHOP-AMS` geen gezonde poolleden meer, dan weet FAD-FRA dat ook.
 - **Delegatie van een subdomein** (best practice): de bestaande DNS blijft eigenaar van het domein; alleen
   `gslb.` gaat naar de FortiADC's, en de vriendelijke naam is een CNAME daarnaartoe.
 
@@ -47,7 +49,7 @@ desktop ──► lab-DNS (BIND, 10.80.0.53)
 | "De gewone DNS kent `shop` alleen als verwijzing naar het GSLB-subdomein." | Desktop: `dig shop.adclab.internal` → CNAME `shop.gslb…` en A `10.80.0.111`. |
 | "Dat subdomein is gedelegeerd aan twee nameservers: de FortiADC in Amsterdam en die in Frankfurt." | `dig NS gslb.adclab.internal` → `ns1` en `ns2`. |
 | "Vraag het aan elk van beide: hetzelfde antwoord." | `dig +short @10.80.0.1 shop.gslb.adclab.internal` en `@10.80.0.2`: beide `10.80.0.111`. |
-| "Ze kennen elkaar: in Amsterdam staat Frankfurt als GSLB-server, en omgekeerd. De virtual servers komen er vanzelf in via auto-sync." | GUI AMS: *Global Load Balance → Servers*: `FAD-AMS` en `FAD-FRA`, met hun virtual server list. Cockpit → **GSLB-status op beide FortiADC's**. |
+| "Ze kennen elkaar: in Amsterdam staat Frankfurt als GSLB-server, en omgekeerd. De virtual servers komen er vanzelf in via auto-sync." | GUI AMS: *Global Load Balance → Servers*: `DEFAULT_DNS_SERVER` (de eigen VS'en) en `FAD-FRA` (die van Frankfurt), elk met hun virtual server list. Cockpit → **GSLB-status op beide FortiADC's**. |
 | "De webshop is actief/standby: Amsterdam primair, Frankfurt uitwijk." | GUI: host `GH-SHOP`, methode *global availability*, pool-lijst AMS → FRA. |
 
 ### Stap 2: alle webservers in Amsterdam vallen uit
@@ -76,8 +78,8 @@ desktop ──► lab-DNS (BIND, 10.80.0.53)
   browsers. In het lab cachet de lab-DNS maximaal 5 s en Firefox niet (policy), zodat je het live ziet.
 - **Methoden**: *global availability* (actief/standby), *weight* (gewogen, actief/actief, script 8) en
   *topology* (op basis van de locatie van de client).
-- **Sync-beveiliging**: de FortiADC's authenticeren de GSLB-sync met een gedeelde sleutel (TCP-MD5); in het
-  lab loopt die over het managementnetwerk.
+- **Sync-beveiliging**: in productie authenticeer je de GSLB-sync (TCP-MD5 of auth-verify). In het lab loopt
+  hij onversleuteld over het managementnetwerk.
 - **Generic Host** gebruik je voor servers of load balancers die geen FortiADC zijn, én als meerdere FQDN's
   één VIP delen: zie script 8.
 

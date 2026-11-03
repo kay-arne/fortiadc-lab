@@ -607,10 +607,14 @@ def provision_slb(log, topo, site) -> list[str]:
 def provision_gslb(log, topo, site) -> list[str]:
     cli = Cli(topo, site)
     try:
-        for title, lines in adcconfig.gslb_blocks(topo):
+        for title, lines in adcconfig.gslb_blocks(topo, site):
             log(f"== [{site}] {title} ==")
             n = cli.apply(lines, log, title)
             log(f"[{site}]   {'✔ toegepast' if not n else f'⚠ {n} regel(s) geweigerd'}")
+        n = len(cli.errors)
+        for line in adcconfig.gslb_cleanup(site):  # bestaat hij niet, dan is dat prima
+            cli.run(line)
+        del cli.errors[n:]
         time.sleep(3)
         zones = gslb_zones(cli)
         log(f"[{site}] GSLB-zones (gegenereerd door de hosts): {', '.join(zones) or 'geen'}")

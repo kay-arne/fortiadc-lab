@@ -3,14 +3,16 @@
 Elk datacenter heeft een eigen FortiADC. Per FortiADC bestaat de config uit:
 - SLB: health checks, real servers, pools, persistence, content routing, WAF en de
   virtual servers van zíjn datacenter;
-- GSLB: op beide FortiADC's identiek. Beide kennen dezelfde data centers, servers,
-  pools en hosts, en beide beantwoorden DNS voor gslb.<domein>. Zo blijft GSLB
-  werken als één heel datacenter (inclusief zijn FortiADC) wegvalt.
+- GSLB: op beide FortiADC's gelijkwaardig. Beide kennen dezelfde data centers, pools
+  en hosts, en beide beantwoorden DNS voor gslb.<domein>. Zo blijft GSLB werken als
+  één heel datacenter (inclusief zijn FortiADC) wegvalt.
 
-GSLB-servers:
-  FAD-<dc>  type FortiADC-SLB: de FortiADC van dat datacenter. Met auto-sync haalt
-            elke FortiADC de virtual servers én hun status (gezond als de pool
-            gezonde leden heeft) bij de andere op. Verkeer via management (port1).
+GSLB-servers (gezien vanaf de FortiADC van datacenter X):
+  DEFAULT_DNS_SERVER  ingebouwd (127.0.0.1): de FortiADC zelf, datacenter X. Met
+            auto-sync kent hij de eigen virtual servers en hun status (gezond als de
+            pool gezonde leden heeft).
+  FAD-<dc>  type FortiADC-SLB: de FortiADC van het ándere datacenter, op zijn
+            management-IP (TCP 5858, auto-sync).
   GEN-<dc>  type Generic Host: voor FQDN's die één VIP delen (content routing). Elke
             FQDN is een eigen lid met een eigen HTTPS-health check mét Host-header,
             zodat hij los van de andere FQDN's op dezelfde VIP kan failoveren.
@@ -28,7 +30,7 @@ Naamgeving (best practice: type-prefix, zodat objecten in de GUI te groeperen zi
 """
 from __future__ import annotations
 
-from .config import adc, datacenter_map, domain, generated_secret, gslb_domain, inventory, pool_members
+from .config import adc, datacenter_map, domain, gslb_domain, inventory, pool_members
 from .pki import cert_name
 
 PERSISTENCE = {"cookie": "PERS-COOKIE", "source": "LB_PERSIS_SRC_ADDR"}
@@ -261,28 +263,37 @@ def gslb_vses(topo, server=None) -> list[dict]:
             if vs.get("gslb") and (server is None or vs["gslb"].get("server", "slb") == server)]
 
 
-def gslb_key() -> str:
-    """Gedeelde sleutel voor de GSLB-sync tussen de FortiADC's (TCP-MD5)."""
-    return generated_secret("gslb_sync_key", 16)
+# De lokale FortiADC zit al in de GSLB als ingebouwde server DEFAULT_DNS_SERVER
+# (127.0.0.1): die synchroniseert de eigen virtual servers. De ándere FortiADC komt
+# erbij als FortiADC-SLB-server op zijn management-IP (TCP 5858, auto-sync).
+LOCAL_SERVER = "DEFAULT_DNS_SERVER"
+# Sync-authenticatie: TCP-MD5 vraagt een wachtwoord dat op de andere FortiADC in een
+# (ongedocumenteerde) instelling moet staan. In het lab loopt de sync over het
+# management-LAN; daarom voorlopig zonder.
+GSLB_AUTH = "none"
 
 
-def _member(vs, host, site) -> tuple[str, str]:
-    """(GSLB-server, server-member-name) van een FQDN in een datacenter."""
+def _member(vs, host, site, local) -> tuple[str, str]:
+    """(GSLB-server, server-member-name) van een FQDN in een datacenter, gezien vanaf
+    de FortiADC van datacenter 'local'."""
     if vs["gslb"].get("server", "slb") == "slb":
-        return slb_server(site), vs_name(vs, site)  # naam zoals auto-sync hem ophaalt
+        server = LOCAL_SERVER if site == local else slb_server(site)
+        return server, vs_name(vs, site)  # naam zoals auto-sync hem ophaalt
     return generic_server(site), host
 
 
-def gslb(topo) -> list[str]:
+def gslb(topo, local) -> list[str]:
+    """GSLB-config voor de FortiADC van datacenter 'local'. Beide FortiADC's kennen
+    dezelfde datacenters, pools en hosts; alleen wie 'lokaal' is verschilt."""
     dcs = datacenter_map(topo)
     lines = _block("global-load-balance data-center",
                    [(d["id"], [f"set location {d['location']}"]) for d in dcs.values()])
-    servers = []
+    servers = [(LOCAL_SERVER, [f"set data-center {local}"])]
     for site in dcs:
-        # Elke FortiADC staat in de lijst, ook de eigen: zo is de config op beide gelijk.
-        servers.append((slb_server(site), [
-            "set server-type FortiADC-SLB", f"set ip {mgmt_ip(topo, site)}", f"set data-center {site}",
-            "set auth-type TCP_MD5SIG", f"set auth-key {gslb_key()}", "set auto-sync enable"]))
+        if site != local:
+            servers.append((slb_server(site), [
+                "set server-type FortiADC-SLB", f"set ip {mgmt_ip(topo, site)}", "set port 5858",
+                f"set data-center {site}", f"set auth-type {GSLB_AUTH}", "set auto-sync enable"]))
     for site in dcs:
         members = []
         for vs in gslb_vses(topo, "generic"):
@@ -304,7 +315,7 @@ def gslb(topo) -> list[str]:
                 # Eén pool per DC; de volgorde in de pool-lijst bepaalt wie actief is.
                 names = []
                 for site in vs["sites"]:
-                    server, member = _member(vs, host, site)
+                    server, member = _member(vs, host, site, local)
                     names.append(f"GP-{up(host)}-{site}")
                     pools_.append((names[-1], _block("member", [
                         ("1", [f"set server {server}", f"set server-member-name {member}", "set weight 1"])])))
@@ -312,7 +323,7 @@ def gslb(topo) -> list[str]:
                 names = [f"GP-{up(host)}"]
                 members = []
                 for i, site in enumerate(vs["sites"]):
-                    server, member = _member(vs, host, site)
+                    server, member = _member(vs, host, site, local)
                     members.append((str(i + 1), [f"set server {server}", f"set server-member-name {member}",
                                                  "set weight 1"]))
                 pools_.append((names[0], _block("member", members)))
@@ -355,8 +366,13 @@ def slb_blocks(topo, site) -> list[tuple[str, list[str]]]:
     ] if b[1]]
 
 
-def gslb_blocks(topo) -> list[tuple[str, list[str]]]:
-    return [("GSLB (data centers, servers, pools, hosts)", gslb(topo))] if gslb_vses(topo) else []
+def gslb_blocks(topo, site) -> list[tuple[str, list[str]]]:
+    return [("GSLB (data centers, servers, pools, hosts)", gslb(topo, site))] if gslb_vses(topo) else []
+
+
+def gslb_cleanup(site) -> list[str]:
+    """Server die een eerdere versie aanmaakte: de FortiADC naar zichzelf (bleef leeg)."""
+    return ["config global-load-balance servers", f'delete "{slb_server(site)}"', "end"]
 
 
 def render(topo) -> str:
@@ -367,10 +383,10 @@ def render(topo) -> str:
     for a in topo["adcs"]:
         out += ["#" * 78, f"# {a['hostname']}  (datacenter {a['dc']}, management {a['mgmt'] or 'DHCP'})",
                 "#" * 78, ""]
-        blocks = slb_blocks(topo, a["site"]) + gslb_blocks(topo)
+        blocks = slb_blocks(topo, a["site"]) + gslb_blocks(topo, a["site"])
         for title, lines in blocks:
             out += [f"# --- {title} ---", *lines, ""]
         out += ["# --- DNS-policy (zonenamen worden na de GSLB-hosts uitgelezen) ---",
                 *dns_policy([f"{gslb_domain(topo)}."]), ""]
-    return "\n".join(out).replace(gslb_key(), "<gedeelde-sleutel>")
+    return "\n".join(out)
 
