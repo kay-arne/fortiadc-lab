@@ -74,7 +74,7 @@ desktop ──► lab-DNS (BIND, 10.80.0.53)
 
 - **TTL en caching**: failover-tijd = detectie (health check + sync) + TTL + caching in resolvers en
   browsers. In het lab cachet de lab-DNS maximaal 5 s en Firefox niet (policy), zodat je het live ziet.
-- **Methoden**: *global availability* (actief/standby), *none/gewogen* (actief/actief, script 8) en
+- **Methoden**: *global availability* (actief/standby), *weight* (gewogen, actief/actief, script 8) en
   *topology* (op basis van de locatie van de client).
 - **Sync-beveiliging**: de FortiADC's authenticeren de GSLB-sync met een gedeelde sleutel (TCP-MD5); in het
   lab loopt die over het managementnetwerk.

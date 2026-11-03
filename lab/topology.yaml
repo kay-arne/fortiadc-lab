@@ -107,7 +107,7 @@ apps:
 #   routes  : content routing (L7) op Host-header of URL-pad, i.p.v. één pool
 #   gslb    : de hosts komen onder gslb.<domein>, op beide FortiADC's gelijk geconfigureerd.
 #     method: global-availability (actief/standby in de volgorde van 'sites') of
-#             none (gewogen, actief/actief)
+#             weight (gewogen, actief/actief)
 #     server: slb     = GSLB-server type FortiADC-SLB: de FortiADC's synchroniseren
 #                       elkaars virtual servers en hun status (auto-sync)
 #             generic = GSLB-server type Generic Host met een eigen health check per FQDN;
@@ -130,7 +130,7 @@ virtual_servers:
       - {name: api,      match: host, value: api,     pool: api}
       - {name: portal,   match: host, value: portal,  pool: portal}
     method: LB_METHOD_LEAST_CONNECTION
-    gslb: {method: none, server: generic}
+    gslb: {method: weight, server: generic}
   - id: juice
     title: "OWASP Juice Shop achter WAF (blokkeren), Amsterdam"
     hosts: [juice]

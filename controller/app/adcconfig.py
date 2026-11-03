@@ -314,7 +314,8 @@ def gslb(topo) -> list[str]:
                     members.append((str(i + 1), [f"set server {server}", f"set server-member-name {member}",
                                                  "set weight 1"]))
                 pools_.append((names[0], _block("member", members)))
-            body = [f"set host-name {host}", f"set domain-name {gslb_domain(topo)}",
+            # FortiADC eist een FQDN met afsluitende punt.
+            body = [f"set host-name {host}", f"set domain-name {gslb_domain(topo)}.",
                     f"set load-balance-method {method}"]
             body += _block("virtual-server-pool-list",
                            [(str(i + 1), [f"set virtual-server-pool {p}"]) for i, p in enumerate(names)])

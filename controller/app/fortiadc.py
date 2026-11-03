@@ -87,6 +87,24 @@ CLI_ERROR = re.compile(r"(command parse error|parse error before|unknown action|
                        r"value parse error|object .* not exist|error[: ]-?\d+)", re.I)
 
 
+# Opties die per FortiADC-versie anders heten. Weigert de FortiADC een regel, dan
+# probeert de controller deze schrijfwijzen (in volgorde) voor hij het als fout telt.
+CLI_ALTERNATIVES = [
+    # 8.0: het veld heet in Fortinets eigen voorbeeld '...-detect'
+    (re.compile(r"^set heuristic-sql-xss-injection-detection (.+)$"), [r"set heuristic-sql-xss-injection-detect \1"]),
+    # GSLB-host: gewogen heet 'weight' (8.0) of 'none' (oudere documentatie)
+    (re.compile(r"^set load-balance-method weight$"), ["set load-balance-method none"]),
+    (re.compile(r"^set load-balance-method none$"), ["set load-balance-method weight"]),
+]
+
+
+def alternatives(line: str) -> list[str]:
+    for pat, repls in CLI_ALTERNATIVES:
+        if pat.match(line):
+            return [pat.sub(r, line) for r in repls]
+    return []
+
+
 def _read(shell, timeout) -> str:
     buf = ""
     deadline = time.time() + timeout
@@ -144,6 +162,16 @@ class Cli:
                 path.pop()
             n = len(self.errors)
             self.run(s)
+            if len(self.errors) > n:
+                for alt in alternatives(s):
+                    m = len(self.errors)
+                    self.run(alt)
+                    if len(self.errors) == m:  # geaccepteerd: de oorspronkelijke fout vervalt
+                        del self.errors[n:]
+                        if log:
+                            log(f"  ↳ '{s}' geweigerd, '{alt}' wel geaccepteerd")
+                        break
+                    del self.errors[m:]
             if len(self.errors) > n:
                 where = " > ".join(p for p in path if p != s)
                 self.errors[-1] = f"[{self.site}: {context}] {where}: {self.errors[-1]}"

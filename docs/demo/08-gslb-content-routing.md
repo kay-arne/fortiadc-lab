@@ -6,7 +6,7 @@ de juiste Host-header) faalt elke applicatie onafhankelijk over naar het andere 
 
 **Duur:** 10 minuten · **Objecten:** `GEN-AMS` / `GEN-FRA` (Generic Host) met in de virtual-server-lijst
 `portal` en `api` op hetzelfde IP, elk met eigen health check `HC-GSLB-PORTAL` / `HC-GSLB-API`;
-hosts `GH-PORTAL` en `GH-API` met methode *none* (gewogen, actief/actief). Op beide FortiADC's gelijk.
+hosts `GH-PORTAL` en `GH-API` met methode *weight* (gewogen, actief/actief). Op beide FortiADC's gelijk.
 
 ## Het probleem
 
