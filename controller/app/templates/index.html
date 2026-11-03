@@ -107,9 +107,12 @@
     </div>
 
     <div class="card">
-      <div class="card-head"><h2><span class="step">6</span> Desktop: uplink</h2><span class="badge opt">optioneel</span></div>
-      <p class="help">De Ubuntu desktop heeft twee netwerkkaarten: één in het lab (<code>10.80.0.10</code>, VIP's en
-        lab-DNS) en één op de uplink voor internet en RDP. Standaard via DHCP.</p>
+      <div class="card-head"><h2><span class="step">6</span> Desktop: RDP vanuit je management-LAN</h2><span class="badge opt">optioneel</span></div>
+      <p class="help">De Ubuntu desktop is je <b>weg het lab in</b>. Hij heeft twee netwerkkaarten: één op de uplink
+        (zelfde bridge/VLAN als port1 van de FortiADC's, dus je management-LAN), waarop je hem via <b>RDP</b>
+        (TCP 3389) overneemt en die internet geeft; en één in het lab (<code>10.80.0.10</code>) naar de VIP's en
+        de lab-DNS. Standaard krijgt de uplink een adres via DHCP; dat adres staat daarna op de Toegang-tab. Wil je
+        een vast RDP-adres, kies dan een statisch IP. Dat geldt bij de eerstvolgende uitrol van de desktop.</p>
       <div class="grid2">
         <div class="field"><label for="i-dmode">Uplink</label>
           <select id="i-dmode"><option value="dhcp">DHCP</option><option value="static">Statisch IP</option></select></div>

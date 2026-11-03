@@ -30,6 +30,29 @@ urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 CONFIG_FILE = DATA / "fortiadc-config.txt"
 ADMIN_TIMEOUT = 480  # minuten; lab: lang ingelogd blijven in de GUI
+# FortiADC kent tijdzones als nummer (Fortinet-lijst; 4 = Pacific, de fabrieksstand).
+# 26 = (GMT+1:00) Amsterdam, Berlin, Bern, Rome, Stockholm, Vienna.
+FALLBACK_ZONE = {"Amsterdam": 26}
+
+
+def set_timezone(cli, log, site, tz: str):
+    """Tijdzone zetten op de stad uit lab.timezone (bijv. Europe/Amsterdam). Het nummer
+    wordt opgezocht in de lijst van de FortiADC zelf ('set zone ?'); lukt dat niet, dan
+    de bekende Fortinet-nummering."""
+    city = tz.rsplit("/", 1)[-1].replace("_", " ")
+    cli.run("config system time manual")
+    listing = cli.help("set zone")
+    m = re.search(rf"^\s*(\d+)\b[^\n]*\b{re.escape(city)}\b", listing, re.M | re.I)
+    zone = int(m.group(1)) if m else FALLBACK_ZONE.get(city)
+    if zone is None:
+        cli.run("end")
+        log(f"[{site}] ⚠ tijdzone {tz}: niet gevonden in de zonelijst van de FortiADC; overgeslagen")
+        return
+    cli.run("end")
+    n = cli.apply(["config system time manual", f"set zone {zone}", "set daylight-saving-time enable", "end"],
+                  log, "tijdzone")
+    log(f"[{site}] tijdzone {city} (zone {zone}{', uit de zonelijst' if m else ', standaardnummer'})"
+        f"{'' if not n else ': NIET gezet'}")
 
 
 def license_of(site) -> dict:
@@ -179,6 +202,15 @@ class Cli:
                 if log:
                     log(f"  ⚠ {self.errors[-1]}")
         return len(self.errors) - before
+
+    def help(self, prefix: str, timeout=10) -> str:
+        """Contexthulp van de CLI ('<prefix> ?'): de '?' werkt direct, zonder Enter.
+        Daarna de invoerregel wissen (Ctrl-U), zodat er niets wordt uitgevoerd."""
+        self.shell.send(prefix + " ?")
+        out = _read(self.shell, timeout)
+        self.shell.send("\x15")
+        _read(self.shell, 2)
+        return out
 
     def close(self):
         self.client.close()
@@ -560,6 +592,7 @@ def provision_slb(log, topo, site) -> list[str]:
     cli = Cli(topo, site)
     try:
         cli.apply(["config system global", f"set admin-idle-timeout {ADMIN_TIMEOUT}", "end"], log, "global")
+        set_timezone(cli, log, site, topo["lab"].get("timezone", "Europe/Amsterdam"))
         for title, lines in adcconfig.slb_blocks(topo, site):
             log(f"== [{site}] {title} ({sum(1 for l in lines if l.strip())} regels) ==")
             if title == "WAF-profielen":

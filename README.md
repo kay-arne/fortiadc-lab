@@ -72,7 +72,9 @@ de web UI. Draai je de oneliner opnieuw, dan biedt hij **Bijwerken** aan.
 4. **Toegang & scripts**: logins, de lab-CA om te downloaden, alle namen en de demo-scripts.
 
 De desktop installeert zichzelf (Ubuntu Desktop + Firefox) en is na ~15-30 minuten klaar; de Lab-tab
-toont de cloud-init-status. Neem hem over met **RDP** (Windows: *Extern bureaublad*, macOS: *Windows App*)
+toont de cloud-init-status. De desktop is je weg het lab in: zijn eerste NIC hangt aan dezelfde
+bridge/VLAN als port1 van de FortiADC's (je management-LAN, DHCP of een vast IP uit Setup stap 6), de
+tweede in het lab. Neem hem over met **RDP** (Windows: *Extern bureaublad*, macOS: *Windows App*)
 op zijn uplink-adres: de Toegang-tab haalt dat adres op via de guest agent en toont gebruiker en
 wachtwoord. De Proxmox-console werkt ook. Een bestaande desktop krijgt nieuwe afstellingen (RDP, geen
 welkomstwizard) met **Toegang → Desktop bijwerken en herstarten**, zonder herinstallatie.
@@ -139,6 +141,9 @@ failover. Aandachtspunten:
 
 - **Disks**: `data.qcow2` wordt na het importeren vergroot (`data_disk_gb` in `lab/topology.yaml`). Gebruikt
   FortiADC de extra ruimte niet, of start hij niet met een vergrote datadisk, zet `data_disk_gb: 0`.
+- **Tijdzone**: de FortiADC's krijgen de tijdzone uit `lab.timezone` (standaard Europe/Amsterdam). Het
+  zone-nummer zoekt de controller op in de lijst van de FortiADC zelf (`set zone ?`), met 26 (Fortinet-nummer
+  voor Amsterdam) als terugval.
 - **Geheugen**: 8 GB per FortiADC (Fortinets minimum), dus 16 GB voor beide. Krap op je host? Verlaag
   `memory` in `lab/topology.yaml`; voor een demo werkt 4 GB meestal, maar dat is onder het minimum.
 - **Day-0**: een cloud-init config drive (config-drive v2) werkt op Proxmox niet voor FortiADC (getest met
