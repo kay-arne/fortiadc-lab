@@ -219,7 +219,10 @@ function renderChecks(checks) {
 
 function fillSettings(s) {
   renderChecks(s.checks);
-  $("#cur-image").textContent = s.adc_image ? `${s.adc_image} (${fmtSize(s.adc_image_size || 0)})` : "geen";
+  ["boot", "data"].forEach((k) => {
+    const i = (s.adc_images || {})[k] || {};
+    $(`#cur-image-${k}`).textContent = i.size ? `${i.name} (${fmtSize(i.size)})` : "geen";
+  });
   $("#i-wanmode").value = s.wan.mode || "static";
   $("#i-wangw").value = s.wan.gateway || "";
   $("#adc-ips").innerHTML = s.adcs.map((a) => `
@@ -325,7 +328,8 @@ function upload(inputSel, url, progressSel, extra = "") {
   };
   xhr.send(file);
 }
-$("#btn-upload-image").onclick = () => upload("#f-image", "/api/upload/image", "#p-image");
+$("#btn-upload-boot").onclick = () => upload("#f-image-boot", "/api/upload/image", "#p-image-boot", "&kind=boot");
+$("#btn-upload-data").onclick = () => upload("#f-image-data", "/api/upload/image", "#p-image-data", "&kind=data");
 
 function secretRow(id, value) {
   return `<div class="secret"><input id="${id}" type="password" readonly value="${esc(value)}">

@@ -39,9 +39,9 @@ dns:
 # FortiADC) stel je in de web UI in.
 fortiadc:
   cores: 2                   # FortiADC-VM wordt per vCPU gelicenseerd (VM02 = 2 vCPU)
-  memory: 4096
-  disk_bus: virtio           # boot- en logdisk als virtio0/virtio1
-  log_disk_gb: 30
+  memory: 8192               # Fortinet: minimaal 8 GB (Proxmox-deploymentartikel)
+  disk_bus: virtio           # boot.qcow2 als virtio0, data.qcow2 als virtio1 (KVM-installatiegids)
+  data_disk_gb: 30           # data.qcow2 (logs, rapporten) wordt naar deze grootte vergroot; 0 = niet
   wan:                       # port1 = management (GUI, SSH, REST, GSLB-sync) + default route
     mode: static             # static | dhcp  (instelbaar in de web UI)
     gateway: ""

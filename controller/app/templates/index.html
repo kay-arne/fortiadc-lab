@@ -40,14 +40,20 @@
     </div>
 
     <div class="card">
-      <div class="card-head"><h2><span class="step">2</span> FortiADC-VM image</h2><span class="badge" data-check="image"></span></div>
+      <div class="card-head"><h2><span class="step">2</span> FortiADC-VM images</h2><span class="badge" data-check="image"></span></div>
       <p class="help">Download in de Fortinet support portal (<i>Support → VM Images → FortiADC → KVM</i>) het
-        <code>FAD_KVM-v7.x-...-FORTINET.out.kvm.zip</code>, pak het uit en upload de <code>.qcow2</code>.
-        Het image gaat bij het uitrollen naar de host.</p>
-      <div class="field">
-        <div class="row"><input type="file" id="f-image" accept=".qcow2"><button id="btn-upload-image">Uploaden</button></div>
-        <progress id="p-image" max="100" value="0" hidden></progress>
-        <div class="current">Huidig: <b id="cur-image">geen</b></div>
+        <code>FAD_KVM-v7.x-...-FORTINET.out.kvm.zip</code> en pak het uit. Upload <b>beide</b> bestanden:
+        <code>boot.qcow2</code> (systeem) en <code>data.qcow2</code> (logs en rapporten). Beide FortiADC's krijgen
+        hun eigen kopie: boot als eerste en data als tweede VirtIO-disk, zoals in Fortinets KVM-installatiegids.</p>
+      <div class="grid2">
+        <div class="field"><label for="f-image-boot">boot.qcow2</label>
+          <div class="row"><input type="file" id="f-image-boot" accept=".qcow2"><button id="btn-upload-boot">Uploaden</button></div>
+          <progress id="p-image-boot" max="100" value="0" hidden></progress>
+          <div class="current">Huidig: <b id="cur-image-boot">geen</b></div></div>
+        <div class="field"><label for="f-image-data">data.qcow2</label>
+          <div class="row"><input type="file" id="f-image-data" accept=".qcow2"><button id="btn-upload-data">Uploaden</button></div>
+          <progress id="p-image-data" max="100" value="0" hidden></progress>
+          <div class="current">Huidig: <b id="cur-image-data">geen</b></div></div>
       </div>
     </div>
 

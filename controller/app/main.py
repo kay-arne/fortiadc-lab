@@ -102,12 +102,15 @@ def public_state() -> dict:
     topo = load_topology()
     wan = topo["fortiadc"]["wan"]
     adcs = topo["adcs"]
-    image = s.get("adc_image")
-    image_size = (UPLOADS / image).stat().st_size if image and (UPLOADS / image).exists() else None
+    images = {}
+    for kind in deployer.ADC_IMAGES:
+        name = s.get(f"adc_{kind}_image")
+        images[kind] = {"name": s.get(f"adc_{kind}_upload") or name,
+                        "size": (UPLOADS / name).stat().st_size if name and (UPLOADS / name).exists() else None}
     lic_mode = s.get("license_mode", "none")
     checks = [
         {"id": "host", "label": "Proxmox-koppeling", "ok": HOST_FILE.exists()},
-        {"id": "image", "label": "FortiADC-image", "ok": bool(image_size)},
+        {"id": "image", "label": "FortiADC-images", "ok": all(i["size"] for i in images.values())},
         {"id": "wan", "label": "Management port1",
          "ok": wan["mode"] == "dhcp" or bool(wan.get("gateway") and all(a["mgmt"] for a in adcs))},
         {"id": "admin", "label": "Admin-wachtwoord", "ok": bool(s.get("adc_admin_password"))},
@@ -116,7 +119,7 @@ def public_state() -> dict:
                    or (lic_mode == "fortiflex" and (s.get("fortiflex_tokens") or {}).get(a["site"])) for a in adcs)},
     ]
     return {
-        "wan": wan, "adc_image": image, "adc_image_size": image_size, "license_mode": lic_mode,
+        "wan": wan, "adc_images": images, "license_mode": lic_mode,
         "adcs": [{"site": a["site"], "dc": a["dc"], "name": a["hostname"], "mgmt": a["mgmt"],
                   "mgmt_dhcp": a["mgmt_dhcp"], "license_file": (s.get("license_files") or {}).get(a["site"]),
                   "fortiflex_token": (s.get("fortiflex_tokens") or {}).get(a["site"]) or ""} for a in adcs],
@@ -304,8 +307,17 @@ async def _stream_upload(request: Request, filename: str, allowed: tuple[str, ..
 
 
 @app.post("/api/upload/image")
-async def upload_image(request: Request, filename: str):
-    update_state(adc_image=await _stream_upload(request, filename, (".qcow2",)))
+async def upload_image(request: Request, filename: str, kind: str):
+    """boot.qcow2 of data.qcow2 uit de FortiADC KVM-zip; opgeslagen onder een vaste naam."""
+    if kind not in deployer.ADC_IMAGES:
+        raise HTTPException(400, "kind moet boot of data zijn")
+    if not filename.lower().endswith(".qcow2"):
+        raise HTTPException(400, "verwacht een .qcow2-bestand")
+    target = deployer.ADC_IMAGES[kind]
+    with open(UPLOADS / target, "wb") as f:
+        async for chunk in request.stream():
+            f.write(chunk)
+    update_state(**{f"adc_{kind}_image": target, f"adc_{kind}_upload": Path(filename).name})
     return public_state()
 
 

@@ -51,13 +51,15 @@ de web UI. Draai je de oneliner opnieuw, dan biedt hij **Bijwerken** aan.
 
 ## Gebruik
 
-1. **Setup**: upload het FortiADC KVM-image (`.qcow2`, één image voor beide), stel per FortiADC een
+1. **Setup**: upload de twee images uit de FortiADC KVM-zip (`boot.qcow2` en `data.qcow2`, één set voor
+   beide FortiADC's), stel per FortiADC een
    management-IP in plus gateway, DNS en het admin-wachtwoord, en kies per FortiADC de licentie (`.lic` of
    FortiFlex-token).
 2. **Lab → Volledig lab uitrollen**. De controller:
    1. maakt de bridges `vmbr800`/`810`/`820` (zonder fysieke poort, zonder host-IP);
-   2. maakt per datacenter een FortiADC-VM met een eigen cloud-init config drive (config-drive v2: day-0 CLI
-      + licentie);
+   2. maakt per datacenter een FortiADC-VM volgens Fortinets KVM-installatiegids: `boot.qcow2` als eerste
+      en `data.qcow2` als tweede VirtIO-disk (vergroot tot 30 GB voor logs), VirtIO-NIC's, 8 GB RAM, plus
+      een eigen cloud-init config drive (config-drive v2: day-0 CLI + licentie);
    3. bouwt één Debian 12-LXC-template (labapp, BIND, Docker) en kloont daaruit alle containers;
    4. haalt de Docker-images voor Juice Shop en DVWA eenmalig op (container kort aan de uplink);
    5. maakt de desktop-VM uit het officiële Ubuntu cloud image (SHA256 gecontroleerd) met cloud-init;
@@ -128,6 +130,10 @@ toevoegen; DNS, certificaat, pool, health check, VS en (optioneel) GSLB volgen v
 Deze eerste versie is lokaal gecontroleerd (syntax, gegenereerde config, PKI, webapp, API), maar **nog niet
 op een Proxmox host met een echte FortiADC-VM** gedraaid. Controleer bij de eerste uitrol vooral:
 
+- **Disks**: `data.qcow2` wordt na het importeren vergroot (`data_disk_gb` in `lab/topology.yaml`). Gebruikt
+  FortiADC de extra ruimte niet, of start hij niet met een vergrote datadisk, zet `data_disk_gb: 0`.
+- **Geheugen**: 8 GB per FortiADC (Fortinets minimum), dus 16 GB voor beide. Krap op je host? Verlaag
+  `memory` in `lab/topology.yaml`; voor een demo werkt 4 GB meestal, maar dat is onder het minimum.
 - **Config drive**: FortiADC documenteert config-drive v2 (`openstack/content/0000` = licentie,
   `openstack/latest/user_data` = CLI) voor VMware/OpenStack; op KVM/Proxmox is dat niet expliciet
   beschreven. Pakt hij niet, dan typt de controller de day-0-CLI via de seriële console (`qm terminal`).

@@ -21,6 +21,8 @@ from .config import (ROOT, UPLOADS, adc, adc_state, datacenter_map, domain, gene
 from .hostctl import HostError, host
 
 DESKTOP_ISO = "adclab-desktop-seed.iso"
+# Het FortiADC KVM-pakket bevat twee images; ze worden onder vaste namen bewaard.
+ADC_IMAGES = {"boot": "fortiadc-boot.qcow2", "data": "fortiadc-data.qcow2"}
 APT_PACKAGES = ("python3 curl ca-certificates openssl dnsutils bind9 bind9-utils docker.io tcpdump iproute2 "
                 "iputils-ping netcat-openbsd apache2-utils")
 CA_PATH = "/usr/local/share/ca-certificates/adclab-root-ca.crt"
@@ -115,7 +117,8 @@ def _install_iso(local: Path, name: str):
     h.run(["install", "-m", "0644", f"{h.workdir}/{name}", f"/var/lib/vz/template/iso/{name}"])
 
 
-def _import_boot_disk(log, vmid, image, storage, bus, opts=""):
+def _import_boot_disk(log, vmid, image, storage, bus, opts="", index=0):
+    """qcow2 importeren (komt binnen als unused0) en koppelen als <bus><index>."""
     h = host()
     try:
         h.run(["qm", "disk", "import", str(vmid), image, storage], log=log)
@@ -124,7 +127,7 @@ def _import_boot_disk(log, vmid, image, storage, bus, opts=""):
     unused = re.search(r"^unused0:\s*(\S+)", h.run(["qm", "config", str(vmid)]), re.M)
     if not unused:
         raise RuntimeError("geïmporteerde disk niet gevonden in de VM-config")
-    h.run(["qm", "set", str(vmid), f"--{bus}0", unused.group(1) + opts], log=log)
+    h.run(["qm", "set", str(vmid), f"--{bus}{index}", unused.group(1) + opts], log=log)
 
 
 def node_mac(ip: str, oui="02:AD:C0") -> str:
@@ -144,9 +147,11 @@ def deploy_fortiadc(log, topo, site):
     fad = topo["fortiadc"]
     a = adc(topo, site)
     vmid = a["vmid"]
-    image = state.get("adc_image")
-    if not image or not (UPLOADS / image).exists():
-        raise RuntimeError("Geen FortiADC qcow2-image geüpload.")
+    images = {kind: state.get(f"adc_{kind}_image") for kind in ADC_IMAGES}
+    missing = [kind for kind, name in images.items() if not name or not (UPLOADS / name).exists()]
+    if missing:
+        raise RuntimeError(f"FortiADC-image ontbreekt: {', '.join(f'{k}.qcow2' for k in missing)} (upload beide "
+                           "bestanden uit de KVM-zip).")
     if fad["wan"]["mode"] == "static" and not a["mgmt"]:
         raise RuntimeError(f"Stel eerst het management-IP van {a['hostname']} in.")
     if not state.get("adc_admin_password"):
@@ -155,8 +160,10 @@ def deploy_fortiadc(log, topo, site):
         log(f"{a['hostname']} ({vmid}) bestaat al, overslaan")
         return
     h.run(["mkdir", "-p", h.workdir])
-    remote_img = f"{h.workdir}/{image}"
-    _put_with_progress(log, UPLOADS / image, remote_img)
+    remote = {}
+    for kind, name in images.items():
+        remote[kind] = f"{h.workdir}/{name}"
+        _put_with_progress(log, UPLOADS / name, remote[kind])
     log(f"[{site}] cloud-init config drive bouwen (day-0 CLI + licentie)")
     _install_iso(fortiadc.build_config_iso(topo, state, site), fortiadc.iso_name(site))
 
@@ -173,8 +180,12 @@ def deploy_fortiadc(log, topo, site):
     try:
         log(f"{a['hostname']} ({vmid}) aanmaken ({len(nics)} NIC's)")
         h.run(args, log=log)
-        _import_boot_disk(log, vmid, remote_img, hcfg["storage"], bus)
-        h.run(["qm", "set", str(vmid), f"--{bus}1", f"{hcfg['storage']}:{fad.get('log_disk_gb', 30)}"], log=log)
+        # Zoals in Fortinets KVM-installatiegids: boot.qcow2 als eerste en data.qcow2
+        # als tweede VirtIO-disk. De datadisk (logs, rapporten) wordt vergroot.
+        _import_boot_disk(log, vmid, remote["boot"], hcfg["storage"], bus, index=0)
+        _import_boot_disk(log, vmid, remote["data"], hcfg["storage"], bus, index=1)
+        if fad.get("data_disk_gb"):
+            h.run(["qm", "disk", "resize", str(vmid), f"{bus}1", f"{fad['data_disk_gb']}G"], log=log)
         h.run(["qm", "set", str(vmid), "--ide2", f"local:iso/{fortiadc.iso_name(site)},media=cdrom"], log=log)
         h.run(["qm", "set", str(vmid), "--boot", f"order={bus}0"], log=log)
     except Exception:
