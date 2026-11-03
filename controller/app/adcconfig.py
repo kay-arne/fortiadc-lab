@@ -342,12 +342,25 @@ def gslb(topo, local) -> list[str]:
     return lines
 
 
+DEFAULT_POLICY = "DEFAULT_DNS_POLICY"
+
+
 def dns_policy(zones: list[str]) -> list[str]:
     """Policy die de (door de GSLB-hosts gegenereerde) zones serveert. De zonenamen
-    zijn pas na het aanmaken van de hosts bekend; de controller leest ze terug."""
-    return _block("global-dns-server policy", [
+    zijn pas na het aanmaken van de hosts bekend; de controller leest ze terug.
+    Policies worden van boven naar beneden gematcht, en de ingebouwde
+    DEFAULT_DNS_POLICY (any/any, recursief) staat bovenaan: DNS-LAB moet erboven."""
+    lines = _block("global-dns-server policy", [
         ("DNS-LAB", ["set source-address any", "set destination-address any",
                      f"set zone-list {' '.join(zones)}", "set recursion-status disable"])])
+    return lines[:-1] + [f'    move "DNS-LAB" before "{DEFAULT_POLICY}"', "end"]
+
+
+def dns_policy_fallback(zones: list[str]) -> list[str]:
+    """Als de FortiADC 'move' niet kent: de zones aan de standaardpolicy hangen en
+    daar recursie uitzetten (de FortiADC is geen open resolver voor het lab)."""
+    return _block("global-dns-server policy", [
+        (DEFAULT_POLICY, [f"set zone-list {' '.join(zones)}", "set recursion-status disable"])])
 
 
 # --------------------------------------------------------------------------

@@ -160,8 +160,12 @@ failover. Aandachtspunten:
   WAF-profiel. Voor zulke verschillen heeft de controller een terugvallijst (`CLI_ALTERNATIVES` in
   `fortiadc.py`). Elke geweigerde regel komt als waarschuwing in de log en op de Lab-tab (*Toon*); de rest
   wordt wel toegepast.
-- **GSLB-zone**: de hosts genereren de zone `fqdn_generate_gslb.adclab.internal.`; de controller leest
-  die naam terug en hangt hem aan de DNS-policy `DNS-LAB`.
+- **GSLB-zone en DNS-policy**: de hosts genereren de zone `fqdn_generate_gslb.adclab.internal.`; de
+  controller leest die naam terug en hangt hem aan de DNS-policy `DNS-LAB`. Policies matchen van boven naar
+  beneden, en de ingebouwde `DEFAULT_DNS_POLICY` (any/any, recursief) staat bovenaan. Daarom schuift de
+  controller `DNS-LAB` erboven (`move`); anders beantwoordt de FortiADC GSLB-namen recursief via internet
+  (NXDOMAIN met de root-SOA, zonder `aa`-vlag). De global DNS-server zelf (`gds-status`) staat in de
+  fabrieksstand uit en wordt aangezet.
 - **GSLB-sync tussen de FortiADC's**: elke FortiADC kent zichzelf als de ingebouwde `DEFAULT_DNS_SERVER`
   (127.0.0.1), die de eigen virtual servers synchroniseert; dat werkt op 8.0.4. Een FortiADC-SLB-server naar
   het eigen management-IP bleef leeg en wordt opgeruimd. De andere FortiADC staat erin als `FAD-<dc>` op zijn

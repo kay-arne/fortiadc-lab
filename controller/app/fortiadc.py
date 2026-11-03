@@ -619,7 +619,14 @@ def provision_gslb(log, topo, site) -> list[str]:
         zones = gslb_zones(cli)
         log(f"[{site}] GSLB-zones (gegenereerd door de hosts): {', '.join(zones) or 'geen'}")
         if zones:
+            n = len(cli.errors)
             cli.apply(adcconfig.dns_policy(zones), log, "DNS-policy")
+            if any("move" in e for e in cli.errors[n:]):
+                del cli.errors[n:]
+                log(f"[{site}] 'move' niet ondersteund; zone aan {adcconfig.DEFAULT_POLICY} gehangen")
+                cli.apply(adcconfig.dns_policy_fallback(zones), log, "DNS-policy")
+            else:
+                log(f"[{site}] DNS-policy DNS-LAB staat boven {adcconfig.DEFAULT_POLICY}")
         else:
             cli.errors.append(f"[{site}: DNS-policy] geen gegenereerde zone; controleer Global Load Balance > Hosts")
     finally:
