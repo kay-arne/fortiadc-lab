@@ -324,7 +324,10 @@ def gslb(topo) -> list[str]:
             hosts.append((f"GH-{up(host)}", body))
     lines += _block("global-load-balance virtual-server-pool", pools_)
     lines += _block("global-load-balance host", hosts)
-    lines += ["config global-dns-server general", "    set listen-on-all-interface enable", "end"]
+    # De global DNS-server staat in de fabrieksstand uit: zonder gds-status geeft poort 53
+    # 'connection refused' en kan BIND de delegatie naar de FortiADC's niet volgen.
+    lines += ["config global-dns-server general", "    set gds-status enable",
+              "    set listen-on-all-interface enable", "end"]
     return lines
 
 
