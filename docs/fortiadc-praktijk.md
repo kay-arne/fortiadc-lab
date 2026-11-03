@@ -210,7 +210,7 @@ end
 Controle: `get global-load-balance servers FAD-FRA` toont onderaan de gesynchroniseerde virtual servers
 (`== [ VS-SHOP-FRA ]` …). Die namen gebruik je als `server-member-name` in de GSLB-pools.
 
-### Authenticatie van de sync 🟡
+### Authenticatie van de sync ✅
 
 Twee plekken hebben een `auth-type` (`none`, `TCP_MD5SIG`, `auth_verify`) en een `auth-key`. De sleutel moet
 op alle vier gelijk zijn:
@@ -243,7 +243,12 @@ Bevindingen op 8.0.4:
 - ✅ Met alleen de serverregel op `auth_verify` + `auth-key` en de setting op `none` synchroniseert het
   wél: de luisterende kant eist dan niets. Controleer dus altijd `get global-load-balance setting`, niet
   alleen of de sync werkt.
-- 🟡 Nog te bevestigen: de sync met de sleutel aan beide kanten (lab: na *FortiADC-config opnieuw toepassen*).
+- ✅ Met `auth_verify` + dezelfde `auth-key` in de setting én op de serverregel, op beide FortiADC's,
+  synchroniseert het. Controle:
+  ```
+  get global-load-balance setting          # auth-type : auth_verify, auth-key : *
+  get global-load-balance servers FAD-FRA  # == [ VS-...-FRA ] in de lijst
+  ```
 - **`auth_verify`** heeft de voorkeur: de sleutel gaat versleuteld en het werkt ook met NAT ertussen.
   `TCP_MD5SIG` werkt niet door NAT heen.
 - **Certificaten (optioneel, bovenop de sleutel):** `set user-defined-certificate enable` maakt `cert`
@@ -251,13 +256,12 @@ Bevindingen op 8.0.4:
   `intermediate-ca-group` toe (welke CA's de andere mag gebruiken). Zelfde velden op de serverregel. Niet
   in het lab gebruikt.
 - Scherm poort 5858 daarnaast af, zodat alleen de FortiADC's die onderling bereiken.
-- *Lab:* `dns.gslb_sync_auth` in `lab/topology.yaml` (standaard `auth_verify`). De controller leest de velden
-  van de setting (`set ?` na het auth-type) en gebruikt het wachtwoordveld dat de versie kent; vindt hij er
-  geen, dan probeert hij `auth-key`. (Automatiseren: de eerste regel van de contexthulp staat in de ruwe
-  SSH-uitvoer achter de herhaalde invoer, alleen gescheiden door `\r`. Schoon de uitvoer eerst op, anders
-  mis je juist `*auth-key`.) Na de
-  GSLB-config controleert hij of elke FortiADC de virtual servers van de andere ziet (`verify_sync()`); zo
-  niet, dan zet hij alles op `none` en meldt dat.
+- *Lab:* `dns.gslb_sync_auth` in `lab/topology.yaml` (standaard `auth_verify`). De controller zet
+  `auth-key` in de setting (en probeert `password` als een oudere versie dat weigert). Na de GSLB-config
+  controleert hij of elke FortiADC de virtual servers van de andere ziet (`verify_sync()`); zo niet, dan zet
+  hij alles op `none` en meldt dat.
+- Automatiseren: de contexthulp (`set ?`) uitlezen via SSH is onbetrouwbaar; juist de eerste regel
+  (`*auth-key`) viel weg. Gebruik vaste veldnamen en controleer achteraf met `get`.
 - Let op: een eerder gesynchroniseerde lijst kan blijven staan. Controleer na een wijziging de status, niet
   alleen of de namen er nog staan.
 

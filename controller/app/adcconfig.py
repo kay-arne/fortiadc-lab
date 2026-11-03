@@ -280,9 +280,9 @@ def gslb_key() -> str:
     return generated_secret("gslb_sync_key", 16)
 
 
-# Wachtwoord van deze FortiADC zelf; 8.0.4 noemt het 'auth-key' (zoals op de
-# serverregel), de 7.4-documentatie 'password'. Verplicht zodra auth-type niet none
-# is. De provisioning controleert de naam op de FortiADC (fortiadc.resolve_gslb_secret).
+# Wachtwoord van deze FortiADC zelf: 'auth-key' in 8.0.4 (getest; verschijnt pas na
+# auth-type en is dan verplicht). De 7.4-documentatie noemt het 'password'; dat
+# probeert de CLI als alternatief (fortiadc.CLI_ALTERNATIVES).
 GSLB_SECRET_FIELD = "auth-key"
 
 
