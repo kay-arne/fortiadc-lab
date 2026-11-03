@@ -47,7 +47,9 @@ EOF
 }
 
 # --- whiptail helpers ----------------------------------------------------------
-# Alle helpers geven de keuze terug op stdout en breken af bij Cancel/Esc.
+# Alle helpers geven de keuze terug op stdout en breken af bij Cancel/Esc. Ze worden
+# ook binnen $(...) aangeroepen: het scherm zelf gaat daarom altijd naar stderr
+# (de terminal), anders verdwijnt een melding in de opgevangen waarde.
 w_input() {   # titel tekst default
   whiptail --backtitle "$TITLE" --title "$1" --inputbox "$2" 13 74 "$3" 3>&1 1>&2 2>&3 || cancel
 }
@@ -58,10 +60,10 @@ w_menu() {    # titel tekst default tag1 item1 tag2 item2 ...
     --menu "$text" $(( n + 10 )) 78 "$n" "$@" 3>&1 1>&2 2>&3 || cancel
 }
 w_yesno() {   # titel tekst  -> rc 0 = ja
-  whiptail --backtitle "$TITLE" --title "$1" --yesno "$2" 12 70
+  whiptail --backtitle "$TITLE" --title "$1" --yesno "$2" 12 70 >&2
 }
 w_msg() {
-  whiptail --backtitle "$TITLE" --title "$1" --msgbox "$2" 12 70
+  whiptail --backtitle "$TITLE" --title "$1" --msgbox "$2" 12 70 >&2
 }
 
 # --- validatie -----------------------------------------------------------------
@@ -99,8 +101,13 @@ ask_valid() {  # validator titel tekst default
   local fn=$1 title=$2 text=$3 val=$4
   while true; do
     val="$(w_input "$title" "$text" "$val")"
+    val="${val#"${val%%[![:space:]]*}"}"; val="${val%"${val##*[![:space:]]}"}"  # spaties eromheen weg
     $fn "$val" && { echo "$val"; return; }
-    w_msg "$title" "Ongeldige waarde: '$val'"
+    case $fn in
+      is_cidr) w_msg "$title" "Ongeldige waarde: '$val'\n\nGeef een IP-adres mét prefix, bijv. 192.168.1.240/24." ;;
+      is_ip)   w_msg "$title" "Ongeldige waarde: '$val'\n\nGeef een IP-adres zonder prefix, bijv. 192.168.1.1." ;;
+      *)       w_msg "$title" "Ongeldige waarde: '$val'" ;;
+    esac
   done
 }
 
