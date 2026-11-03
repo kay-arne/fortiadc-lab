@@ -1,0 +1,206 @@
+<!doctype html>
+<html lang="nl">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>FortiADC Lab</title>
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+<header>
+  <h1>FortiADC Lab</h1>
+  <nav>
+    <button data-tab="setup" class="active">1. Setup</button>
+    <button data-tab="lab">2. Lab</button>
+    <button data-tab="demo">3. Demo-cockpit</button>
+    <button data-tab="access">4. Toegang &amp; scripts</button>
+    <button data-tab="updates">Updates <span id="update-dot" class="dot-new" hidden></span></button>
+  </nav>
+  <span id="hoststatus" class="pill">…</span>
+  <button id="version-pill" class="pill version" data-goto="updates" title="Versie van de controller">…</button>
+  <form method="post" action="/logout" class="logout"><button type="submit" class="ghost">Uitloggen</button></form>
+</header>
+
+<main>
+  <!-- SETUP -->
+  <section id="tab-setup" class="tab active">
+    <div class="intro">
+      <p>Vul de stappen hieronder in. Zodra alle verplichte onderdelen groen zijn, rol je onder <b>2. Lab</b> het lab uit.
+        Elke kaart heeft een eigen <b>Opslaan</b>-knop.</p>
+      <ul id="checklist" class="checklist"></ul>
+    </div>
+
+    <div class="card">
+      <div class="card-head"><h2><span class="step">1</span> Proxmox-verbinding</h2><span class="badge" data-check="host"></span></div>
+      <p class="help">De controller beheert de Proxmox host via <b>SSH</b> (<code>qm</code>, <code>pct</code>,
+        <code>pvesh</code>) en bedient de containers met <code>pct exec</code>, dus niet via het labnetwerk. Deze
+        gegevens zijn door de installer vastgelegd (<code>/opt/adclab/data/host.json</code>).</p>
+      <div id="host-info"></div>
+      <div class="actions"><button id="btn-host-test">Verbinding testen</button><span id="host-test-result" class="result"></span></div>
+    </div>
+
+    <div class="card">
+      <div class="card-head"><h2><span class="step">2</span> FortiADC-VM image</h2><span class="badge" data-check="image"></span></div>
+      <p class="help">Download in de Fortinet support portal (<i>Support → VM Images → FortiADC → KVM</i>) het
+        <code>FAD_KVM-v7.x-...-FORTINET.out.kvm.zip</code>, pak het uit en upload de <code>.qcow2</code>.
+        Het image gaat bij het uitrollen naar de host.</p>
+      <div class="field">
+        <div class="row"><input type="file" id="f-image" accept=".qcow2"><button id="btn-upload-image">Uploaden</button></div>
+        <progress id="p-image" max="100" value="0" hidden></progress>
+        <div class="current">Huidig: <b id="cur-image">geen</b></div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-head"><h2><span class="step">3</span> Management (port1)</h2><span class="badge" data-check="wan"></span></div>
+      <p class="help">Elk datacenter heeft een eigen FortiADC. port1 van beide hangt aan <b id="wan-bridge">-</b>: daarop
+        bereik je de GUI's, praat de controller met de FortiADC's (SSH en REST) en <b>synchroniseren de FortiADC's hun
+        GSLB-status</b> (auto-sync). De VIP's en de GSLB-DNS zitten op port2, in het lab. Wijzigingen gelden bij de
+        eerstvolgende uitrol van de FortiADC's.</p>
+      <div class="grid2">
+        <div class="field"><label for="i-wanmode">Adressering</label>
+          <select id="i-wanmode"><option value="static">Statisch IP (aanbevolen)</option><option value="dhcp">DHCP</option></select></div>
+        <div class="field" data-wan="static"><label for="i-wangw">Default gateway</label><input id="i-wangw" placeholder="192.168.1.1">
+          <div class="hint">Nodig voor FortiGuard (WAF-signatures) en licentie-activatie.</div></div>
+      </div>
+      <div class="grid2" id="adc-ips"></div>
+      <div class="grid2">
+        <div class="field"><label for="i-dns1">DNS-server primair</label><input id="i-dns1" placeholder="bijv. 192.168.1.1">
+          <div class="hint"><span id="dns-suggest"></span></div></div>
+        <div class="field"><label for="i-dns2">DNS-server secundair</label><input id="i-dns2" placeholder="optioneel"></div>
+      </div>
+      <div class="actions"><button class="primary" data-save="wan">Opslaan</button><span class="result" data-result="wan"></span></div>
+    </div>
+
+    <div class="card">
+      <div class="card-head"><h2><span class="step">4</span> FortiADC-beheer</h2><span class="badge" data-check="admin"></span></div>
+      <p class="help">Het wachtwoord van <code>admin</code>. Het gaat via de config drive mee bij de eerste boot; de
+        controller gebruikt het daarna voor SSH en de REST API.</p>
+      <div class="field"><label for="i-adminpw">Admin-wachtwoord</label>
+        <div class="secret"><input id="i-adminpw" type="password" autocomplete="off" placeholder="minimaal 8 tekens">
+          <button class="eye" data-eye="i-adminpw" type="button" title="Tonen/verbergen"></button>
+          <button class="ghost" id="btn-genpw" type="button">Genereer</button></div>
+        <div class="hint">Minimaal 8 tekens, geen spaties, quotes of backslash.</div></div>
+      <div class="actions"><button class="primary" data-save="admin">Opslaan</button><span class="result" data-result="admin"></span></div>
+    </div>
+
+    <div class="card">
+      <div class="card-head"><h2><span class="step">5</span> Licentie</h2><span class="badge" data-check="license"></span></div>
+      <p class="help">Twee FortiADC-VM's, dus twee licenties. FortiADC-VM wordt per vCPU gelicenseerd (het lab gebruikt er
+        standaard 2, dus VM02). Voor de WAF-signatures is FortiGuard nodig.</p>
+      <div class="choices">
+        <label class="choice"><input type="radio" name="lic" value="file"><span><b>Licentiebestand</b>
+          <small><code>.lic</code> uit FortiCare; gaat mee op de config drive.</small></span></label>
+        <label class="choice"><input type="radio" name="lic" value="fortiflex"><span><b>FortiFlex-token</b>
+          <small>Na de boot geactiveerd met <code>execute vm-license</code>.</small></span></label>
+        <label class="choice"><input type="radio" name="lic" value="none"><span><b>Geen / later</b>
+          <small>Evaluatiemodus.</small></span></label>
+      </div>
+      <div id="lic-per-adc" class="grid2"></div>
+      <div class="actions"><button class="primary" data-save="license">Opslaan</button><span class="result" data-result="license"></span></div>
+    </div>
+
+    <div class="card">
+      <div class="card-head"><h2><span class="step">6</span> Desktop: uplink</h2><span class="badge opt">optioneel</span></div>
+      <p class="help">De Ubuntu desktop heeft twee netwerkkaarten: één in het lab (<code>10.80.0.10</code>, VIP's en
+        lab-DNS) en één op de uplink voor internet en RDP. Standaard via DHCP.</p>
+      <div class="grid2">
+        <div class="field"><label for="i-dmode">Uplink</label>
+          <select id="i-dmode"><option value="dhcp">DHCP</option><option value="static">Statisch IP</option></select></div>
+        <div class="field" data-dmode="static"><label for="i-dip">IP met prefix</label><input id="i-dip" placeholder="192.168.1.97/24"></div>
+        <div class="field" data-dmode="static"><label for="i-dgw">Gateway</label><input id="i-dgw"></div>
+        <div class="field" data-dmode="static"><label for="i-ddns">DNS-server</label><input id="i-ddns"></div>
+      </div>
+      <div class="actions"><button class="primary" data-save="desktop">Opslaan</button><span class="result" data-result="desktop"></span></div>
+    </div>
+  </section>
+
+  <!-- LAB -->
+  <section id="tab-lab" class="tab">
+    <div id="app-banner" class="banner" hidden>
+      De labapp in de containers is ouder dan de code van de controller (na een update).
+      <button id="btn-update-banner" class="primary">Labapp bijwerken</button>
+    </div>
+    <div class="toolbar">
+      <button id="btn-deploy" class="primary">Volledig lab uitrollen</button>
+      <button id="btn-provision" title="De gegenereerde config opnieuw op de FortiADC zetten (idempotent)">FortiADC-config opnieuw toepassen</button>
+      <button id="btn-config">Config bekijken</button>
+      <button id="btn-update">Labapp bijwerken</button>
+      <button id="btn-destroy" class="danger">Alles afbreken…</button>
+    </div>
+    <div id="problems" class="banner warnbanner" hidden></div>
+    <div class="selbar">
+      <div class="selinfo"><b id="sel-count">Niets geselecteerd</b>
+        <span class="hint">Vink componenten aan om alleen die uit te rollen. Afhankelijkheden (bridges, template) gaan
+          zo nodig mee; een nieuwe FortiADC krijgt daarna ook zijn configuratie.</span></div>
+      <div class="selactions">
+        <button id="btn-sel-deploy" class="primary" disabled>Uitrollen</button>
+        <button id="btn-sel-recreate" disabled>Opnieuw uitrollen</button>
+        <button id="btn-sel-destroy" class="danger" disabled>Verwijderen</button>
+        <button id="btn-sel-clear" class="ghost" disabled>Selectie wissen</button>
+      </div>
+    </div>
+    <div id="topology"></div>
+  </section>
+
+  <!-- DEMO -->
+  <section id="tab-demo" class="tab">
+    <div class="intro">
+      <p>Elke knop draait een stap uit de <a href="#" data-goto="access">demo-scripts</a>. Verkeer, DNS-vragen en aanvallen
+        komen van de <b>client</b>-container (zelfde segment, DNS en CA als de desktop); storingen worden in de
+        realserver zelf gezet. Laat ondertussen de FortiADC-GUI of de browser op de desktop zien.</p>
+      <div class="row"><button id="btn-reset" class="primary">Alles herstellen (begin van een demo)</button></div>
+    </div>
+    <div id="demo-groups" class="demo-groups"></div>
+    <div class="card">
+      <div class="card-head"><h2>Realservers: health en storingen</h2>
+        <button id="btn-servers">Toestand ophalen</button></div>
+      <p class="help"><b>Fail</b> laat de health check falen (503) terwijl de server draait: de FortiADC haalt hem uit de
+        pool. <b>Stop</b> stopt de webserver (crash). <b>Traag</b> vertraagt elke response 2 s.</p>
+      <div id="servers"></div>
+    </div>
+  </section>
+
+  <!-- ACCESS -->
+  <section id="tab-access" class="tab">
+    <div class="card"><h2>Toegang</h2><div id="access" class="access"></div></div>
+    <div class="card"><h2>Namen in het lab</h2><div id="names"></div></div>
+    <div class="card"><h2>Demo-scripts</h2>
+      <p class="help">Per use case: doel, voorbereiding, wat je zegt en doet, en wat je ziet. Ook in de repo onder
+        <code>docs/demo/</code>.</p>
+      <div id="docs" class="doclist"></div></div>
+  </section>
+
+  <!-- UPDATES -->
+  <section id="tab-updates" class="tab">
+    <div class="card">
+      <div class="card-head"><h2>Controller bijwerken</h2><span id="upd-badge" class="badge"></span></div>
+      <p class="help">De controller is een git-checkout in <code>/opt/adclab</code>. Bijwerken haalt de nieuwste versie op,
+        werkt de Python-dependencies bij en herstart de controller. Instellingen, uploads en de lab-CA staan in
+        <code>data/</code> en blijven behouden. Het draaiende lab wordt niet aangeraakt.</p>
+      <table class="kv"><tr><th>Huidige versie</th><td id="upd-current">-</td></tr><tr><th>Branch</th><td id="upd-branch" class="mono">-</td></tr></table>
+      <div class="actions"><button id="btn-upd-check">Controleren op updates</button>
+        <button id="btn-upd-run" class="primary" hidden>Nu bijwerken</button><span id="upd-result" class="result"></span></div>
+      <div id="upd-commits"></div>
+      <pre id="upd-log" class="logbox" hidden></pre>
+    </div>
+  </section>
+</main>
+
+<aside id="log">
+  <div class="loghead"><b id="log-title">Log</b>
+    <span class="logbtns"><button id="log-stop" class="ghost" hidden>Stop</button><button id="log-close" title="Venster sluiten (de taak loopt door)">×</button></span></div>
+  <pre id="log-body"></pre>
+</aside>
+<button id="job-pill" hidden></button>
+
+<div id="viewer" class="modal" hidden>
+  <div class="modal-box">
+    <div class="card-head"><h2 id="viewer-title">-</h2>
+      <div class="row"><button id="viewer-copy" class="ghost" hidden>Kopieer</button><button id="viewer-close" class="ghost">Sluiten</button></div></div>
+    <div id="viewer-body" class="viewer-body"></div>
+  </div>
+</div>
+<script src="/static/app.js"></script>
+</body>
+</html>

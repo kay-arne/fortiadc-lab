@@ -1,0 +1,168 @@
+# FortiADC Lab - topologie en demo-inhoud.
+#
+# Eén bron voor alles: hieruit bouwt de controller de bridges, containers,
+# desktop, DNS-zone, certificaten én de configuratie van beide FortiADC's.
+#
+# Twee datacenters, elk met een eigen FortiADC. Samen vormen ze de GSLB: beide zijn
+# authoritative voor gslb.<domein>, kennen elkaar als GSLB-server en zien via
+# auto-sync elkaars virtual servers. Valt een heel datacenter weg (ook de FortiADC),
+# dan beantwoordt het andere de DNS en stuurt alles naar zichzelf.
+#
+#   presentator ── vmbr0 ── port1 (mgmt) ── FAD-AMS ── port3 ── vmbr810 Datacenter Amsterdam
+#                       └── port1 (mgmt) ── FAD-FRA ── port3 ── vmbr820 Datacenter Frankfurt
+#                                              │  │
+#   desktop, client, DNS ── vmbr800 ── port2 ──┘  └── port2   ("internet": VIP's + GSLB-DNS van beide)
+#
+# De lab-bridges hebben geen fysieke poort en de Proxmox host heeft er geen IP op.
+# De controller bedient containers out-of-band via de hypervisor (pct exec).
+
+lab:
+  name: fortiadc-lab
+  vmid_base: 9300            # FAD-AMS = base, template = base+1, FAD-FRA = base+2, desktop = base+5, nodes vanaf base+10
+  name_prefix: adclab        # Proxmox-namen worden <prefix>-<naam>, bijv. adclab-shop-ams-1
+  # uplink_bridge / VLAN / template_net / vmid_base / name_prefix kiest de installer
+  # (data/host.json); dit zijn alleen defaults.
+  uplink_bridge: vmbr0
+  template_net: "ip=dhcp"    # zonder DHCP: "ip=192.168.1.239/24,gw=192.168.1.1"
+  timezone: Europe/Amsterdam
+
+# .internal is door ICANN gereserveerd voor privé-gebruik (2024): botst nooit met een
+# echte TLD. De GSLB-namen leven in een gedelegeerd subdomein dat beide FortiADC's
+# beantwoorden (NS-records naar allebei); de vriendelijke namen zijn CNAME's
+# daarnaartoe (best practice).
+dns:
+  domain: adclab.internal
+  gslb_subdomain: gslb       # -> gslb.adclab.internal, NS = FAD-AMS en FAD-FRA (port2)
+  server: dns                # node die BIND draait
+
+# Gemeenschappelijke instellingen van beide FortiADC-VM's. Management (port1, adres per
+# FortiADC) stel je in de web UI in.
+fortiadc:
+  cores: 2                   # FortiADC-VM wordt per vCPU gelicenseerd (VM02 = 2 vCPU)
+  memory: 4096
+  disk_bus: virtio           # boot- en logdisk als virtio0/virtio1
+  log_disk_gb: 30
+  wan:                       # port1 = management (GUI, SSH, REST, GSLB-sync) + default route
+    mode: static             # static | dhcp  (instelbaar in de web UI)
+    gateway: ""
+
+# 'adc': welke FortiADC met welke poort en welk IP in het segment hangt.
+segments:
+  - id: client
+    name: "Internet: clients, VIP's en GSLB-DNS"
+    bridge: vmbr800
+    subnet: 10.80.0.0/24
+    gateway: 10.80.0.1
+    adc:
+      AMS: {port: port2, ip: 10.80.0.1}    # ns1.gslb
+      FRA: {port: port2, ip: 10.80.0.2}    # ns2.gslb
+  - id: ams
+    name: "Datacenter Amsterdam"
+    bridge: vmbr810
+    subnet: 10.81.0.0/24
+    gateway: 10.81.0.1
+    adc:
+      AMS: {port: port3, ip: 10.81.0.1}
+  - id: fra
+    name: "Datacenter Frankfurt"
+    bridge: vmbr820
+    subnet: 10.82.0.0/24
+    gateway: 10.82.0.1
+    adc:
+      FRA: {port: port3, ip: 10.82.0.1}
+
+# Per datacenter een FortiADC (VM-naam <prefix>-<adc>).
+datacenters:
+  - {id: AMS, name: Amsterdam, segment: ams, location: NL, adc: fad-ams}
+  - {id: FRA, name: Frankfurt, segment: fra, location: DE, adc: fad-fra}
+
+# LXC's. role: webapp (eigen demo-app, labapp/), juiceshop / dvwa (Docker in LXC),
+# dns (BIND9), client (verkeers- en aanvalsgenerator voor het demo-cockpit).
+nodes:
+  - {name: dns,          segment: client, ip: 10.80.0.53, role: dns}
+  - {name: client,       segment: client, ip: 10.80.0.20, role: client}
+  - {name: shop-ams-1,   segment: ams,    ip: 10.81.0.11, role: webapp, app: shop}
+  - {name: shop-ams-2,   segment: ams,    ip: 10.81.0.12, role: webapp, app: shop}
+  - {name: shop-fra-1,   segment: fra,    ip: 10.82.0.11, role: webapp, app: shop}
+  - {name: shop-fra-2,   segment: fra,    ip: 10.82.0.12, role: webapp, app: shop}
+  - {name: portal-ams-1, segment: ams,    ip: 10.81.0.21, role: webapp, app: portal}
+  - {name: portal-fra-1, segment: fra,    ip: 10.82.0.21, role: webapp, app: portal}
+  - {name: api-ams-1,    segment: ams,    ip: 10.81.0.31, role: webapp, app: api}
+  - {name: api-fra-1,    segment: fra,    ip: 10.82.0.31, role: webapp, app: api}
+  - {name: juice-ams,    segment: ams,    ip: 10.81.0.41, role: juiceshop, app: juice}
+  - {name: dvwa-fra,     segment: fra,    ip: 10.82.0.42, role: dvwa, app: dvwa}
+
+# Uiterlijk en health check per applicatie. De health check gaat naar de realserver
+# (poort 80); 'path' + 'expect' moeten beide kloppen (match_all).
+apps:
+  shop:   {title: "Polder Webshop",  color: "#1f7a4d", health: {path: /healthz, expect: OK}}
+  portal: {title: "Medewerkersportaal", color: "#2563a8", health: {path: /healthz, expect: OK}}
+  api:    {title: "Orders API",      color: "#7a3fa8", health: {path: /api/healthz, expect: OK}}
+  juice:  {title: "OWASP Juice Shop", health: {path: /, expect: "OWASP Juice Shop"}}
+  dvwa:   {title: "DVWA",            health: {path: /login.php, expect: "Damn Vulnerable"}}
+
+# Wat de FortiADC's publiceren. Per datacenter een virtual server op de FortiADC van
+# dat datacenter (VIP op port2: AMS 10.80.0.1xx, FRA 10.80.0.2xx).
+#   pool    : realservers met dezelfde 'app' in het segment van dat datacenter
+#   routes  : content routing (L7) op Host-header of URL-pad, i.p.v. één pool
+#   gslb    : de hosts komen onder gslb.<domein>, op beide FortiADC's gelijk geconfigureerd.
+#     method: global-availability (actief/standby in de volgorde van 'sites') of
+#             none (gewogen, actief/actief)
+#     server: slb     = GSLB-server type FortiADC-SLB: de FortiADC's synchroniseren
+#                       elkaars virtual servers en hun status (auto-sync)
+#             generic = GSLB-server type Generic Host met een eigen health check per FQDN;
+#                       nodig als meerdere FQDN's één VIP delen (content routing)
+virtual_servers:
+  - id: shop
+    title: "Webshop: SLB, health checks, persistence, GSLB failover"
+    hosts: [shop]
+    sites: {AMS: 10.80.0.111, FRA: 10.80.0.211}
+    pool: shop
+    method: LB_METHOD_ROUND_ROBIN
+    persistence: cookie
+    gslb: {method: global-availability, server: slb}
+  - id: apps
+    title: "Portal + API op één VIP: content routing + GSLB per FQDN"
+    hosts: [portal, api]
+    sites: {AMS: 10.80.0.120, FRA: 10.80.0.220}
+    routes:
+      - {name: api-path, match: url,  value: "/api/", pool: api}   # eerst: specifiek pad
+      - {name: api,      match: host, value: api,     pool: api}
+      - {name: portal,   match: host, value: portal,  pool: portal}
+    method: LB_METHOD_LEAST_CONNECTION
+    gslb: {method: none, server: generic}
+  - id: juice
+    title: "OWASP Juice Shop achter WAF (blokkeren), Amsterdam"
+    hosts: [juice]
+    sites: {AMS: 10.80.0.130}
+    pool: juice
+    waf: WAF-LAB-BLOCK
+  - id: dvwa
+    title: "DVWA achter WAF (eerst monitoren, dan blokkeren), Frankfurt"
+    hosts: [dvwa]
+    sites: {FRA: 10.80.0.231}
+    pool: dvwa
+    waf: WAF-LAB-MONITOR
+
+# Docker-images voor de kwetsbare applicaties (in het template voorgeladen; de
+# datacenters hebben geen internet). Vaste tags: reproduceerbaar.
+images:
+  juiceshop: bkimminich/juice-shop:v17.1.1
+  dvwa: vulnerables/web-dvwa:latest
+
+desktop:
+  name: desktop
+  cores: 4
+  memory: 6144
+  disk_gb: 32
+  user: demo
+  lab_ip: 10.80.0.10         # tweede NIC op het client-segment; eerste NIC op de uplink (DHCP)
+  image_url: https://cloud-images.ubuntu.com/releases/noble/release/ubuntu-24.04-server-cloudimg-amd64.img
+  sums_url: https://cloud-images.ubuntu.com/releases/noble/release/SHA256SUMS
+
+resources:
+  webapp:    {cores: 1, memory: 256,  disk: 4}
+  dns:       {cores: 1, memory: 256,  disk: 4}
+  client:    {cores: 1, memory: 512,  disk: 4}
+  juiceshop: {cores: 2, memory: 1024, disk: 8}
+  dvwa:      {cores: 1, memory: 1024, disk: 8}

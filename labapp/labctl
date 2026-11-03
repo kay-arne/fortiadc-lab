@@ -1,0 +1,22 @@
+#!/bin/sh
+# Demo-toestand van de labapp in deze container (aangeroepen door het demo-cockpit).
+#   labctl health ok|fail     health check laten slagen of falen
+#   labctl delay <ms>         elke response vertragen (0 = normaal)
+#   labctl reset              terug naar normaal
+#   labctl show
+set -eu
+STATE=/var/lib/labapp/state.json
+mkdir -p /var/lib/labapp
+[ -f "$STATE" ] || echo '{"health": "ok", "delay_ms": 0}' > "$STATE"
+health=$(sed -n 's/.*"health": *"\([a-z]*\)".*/\1/p' "$STATE"); health=${health:-ok}
+delay=$(sed -n 's/.*"delay_ms": *\([0-9]*\).*/\1/p' "$STATE"); delay=${delay:-0}
+case "${1:-show}" in
+  health) case "${2:-}" in ok|fail) health=$2 ;; *) echo "gebruik: labctl health ok|fail" >&2; exit 2 ;; esac ;;
+  delay)  case "${2:-}" in ''|*[!0-9]*) echo "gebruik: labctl delay <ms>" >&2; exit 2 ;; *) delay=$2 ;; esac ;;
+  reset)  health=ok; delay=0 ;;
+  show)   ;;
+  *) echo "onbekend: $1" >&2; exit 2 ;;
+esac
+printf '{"health": "%s", "delay_ms": %s}\n' "$health" "$delay" > "$STATE.tmp"
+chmod 644 "$STATE.tmp" && mv "$STATE.tmp" "$STATE"
+echo "$(hostname): health=$health delay=${delay}ms"
