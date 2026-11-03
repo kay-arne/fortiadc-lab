@@ -299,6 +299,18 @@ def expected_sync(topo, local) -> dict[str, list[str]]:
             for site in datacenter_map(topo) if site != local}
 
 
+def expected_answers(topo) -> dict[str, set[str]]:
+    """Welke A-records een FortiADC in een gezond lab hoort te geven, per GSLB-FQDN:
+    bij global-availability alleen de eerste (actieve) VIP, bij weight elke VIP."""
+    out = {}
+    for vs in gslb_vses(topo):
+        vips = list(vs["sites"].values())
+        ok = set(vips[:1]) if vs["gslb"]["method"] == "global-availability" else set(vips)
+        for host in vs["hosts"]:
+            out[f"{host}.{gslb_domain(topo)}"] = ok
+    return out
+
+
 def _member(vs, host, site, local) -> tuple[str, str]:
     """(GSLB-server, server-member-name) van een FQDN in een datacenter, gezien vanaf
     de FortiADC van datacenter 'local'."""
@@ -316,13 +328,15 @@ def gslb(topo, local, auth=None) -> list[str]:
     lines = gslb_setting(auth)
     lines += _block("global-load-balance data-center",
                     [(d["id"], [f"set location {d['location']}"]) for d in dcs.values()])
-    servers = [(LOCAL_SERVER, [f"set data-center {local}"])]
+    # Ook de ingebouwde server synchroniseert via poort 5858 (met zichzelf, 127.0.0.1):
+    # eist de setting auth_verify, dan heeft hij dezelfde sleutel nodig, anders gaat hij
+    # down en daarmee alle lokale virtual servers.
+    auth_lines = [f"set auth-type {auth}"] + ([f"set auth-key {gslb_key()}"] if auth != "none" else [])
+    servers = [(LOCAL_SERVER, [f"set data-center {local}"] + auth_lines)]
     for site in dcs:
         if site != local:
             body = ["set server-type FortiADC-SLB", f"set ip {mgmt_ip(topo, site)}", "set port 5858",
-                    f"set data-center {site}", f"set auth-type {auth}"]
-            if auth != "none":
-                body.append(f"set auth-key {gslb_key()}")
+                    f"set data-center {site}"] + auth_lines
             servers.append((slb_server(site), body + ["set auto-sync enable"]))
     for site in dcs:
         members = []

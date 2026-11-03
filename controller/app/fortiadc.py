@@ -654,18 +654,20 @@ def provision(log, topo, sites=None):
         log(f"== GSLB op {', '.join(sites)} (sync-authenticatie: {auth}) ==")
         for site in sites:
             problems[site] += provision_gslb(log, topo, site, auth)
-        missing = verify_sync(log, topo, [a["site"] for a in topo["adcs"]])
+        all_sites = [a["site"] for a in topo["adcs"]]
+        missing = verify_sync(log, topo, all_sites)
         if missing and auth != "none":
             log(f"⚠ de FortiADC's synchroniseren niet met {auth}; terugval op auth-type none")
             for site in sites:
                 provision_gslb(log, topo, site, "none")
-            missing = verify_sync(log, topo, [a["site"] for a in topo["adcs"]])
+            missing = verify_sync(log, topo, all_sites)
             for site in sites:
                 problems[site].append(f"[{site}: GSLB-sync] met {auth} kwam de sync niet tot stand; "
                                       "nu zonder authenticatie (zie docs/fortiadc-praktijk.md, 6)")
-        for site, gaps in missing.items():
+        # Alleen melden, geen terugval: tijdens een demo kan een datacenter bewust uit staan.
+        for site, gaps in (missing or verify_answers(log, topo, all_sites)).items():
             if site in problems:
-                problems[site].append(f"[{site}: GSLB-sync] ontbreekt na 90 s: {', '.join(gaps)}")
+                problems[site].append(f"[{site}: GSLB] na 90 s nog niet in orde: {'; '.join(gaps)}")
     for site in sites:
         update_adc_state(site, provisioned=True, problems=problems[site], provisioned_at=time.time())
     total = sum(len(p) for p in problems.values())
@@ -679,6 +681,40 @@ def synced_members(cli: Cli, server: str) -> list[str]:
     """Virtual servers die een FortiADC via auto-sync van een GSLB-server kent."""
     out = cli.run(f"get global-load-balance servers {server}", timeout=30)
     return re.findall(r"==\s*\[\s*([^\]]+?)\s*\]", out)
+
+
+def _dig(node, server, name) -> list[str]:
+    rc, out = host().pct_exec(node["vmid"], f"dig +short +time=2 +tries=1 @{server} {name} A", timeout=30)
+    return [l.strip() for l in out.splitlines() if re.fullmatch(r"\d+\.\d+\.\d+\.\d+", l.strip())]
+
+
+def verify_answers(log, topo, sites, timeout=90) -> dict[str, list[str]]:
+    """Wat de FortiADC's echt antwoorden (dig vanaf de client). Vangt ook af wat
+    verify_sync() mist: een server die down is terwijl zijn VS-namen blijven staan."""
+    from .config import inventory
+    node = next((n for n in inventory(topo) if n["role"] == "client"), None)
+    if not node:
+        return {}
+    want = adcconfig.expected_answers(topo)
+    deadline = time.time() + timeout
+    while True:
+        wrong = {}
+        for site in sites:
+            _, ip = adcconfig.nameserver(topo, site)
+            for name, ok in want.items():
+                got = _dig(node, ip, name)
+                if not got or not set(got) <= ok:
+                    wrong.setdefault(site, []).append(f"{name} → {', '.join(got) or 'geen antwoord'} "
+                                                      f"(verwacht {', '.join(sorted(ok))})")
+        if not wrong or time.time() > deadline:
+            break
+        time.sleep(10)
+    for site in sites:
+        if site in wrong:
+            log(f"[{site}] ⚠ GSLB-antwoord: {'; '.join(wrong[site])}")
+        else:
+            log(f"[{site}] ✔ GSLB-antwoord: alle namen wijzen naar de verwachte VIP")
+    return wrong
 
 
 def verify_sync(log, topo, sites, timeout=90) -> dict[str, list[str]]:

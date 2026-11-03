@@ -243,8 +243,14 @@ Bevindingen op 8.0.4:
 - ✅ Met alleen de serverregel op `auth_verify` + `auth-key` en de setting op `none` synchroniseert het
   wél: de luisterende kant eist dan niets. Controleer dus altijd `get global-load-balance setting`, niet
   alleen of de sync werkt.
-- ✅ Met `auth_verify` + dezelfde `auth-key` in de setting én op de serverregel, op beide FortiADC's,
-  synchroniseert het. Controle:
+- ⚠ **Ook `DEFAULT_DNS_SERVER` heeft de sleutel nodig.** De ingebouwde server synchroniseert met de FortiADC
+  zelf (127.0.0.1) via dezelfde poort 5858. Eist de setting `auth_verify` en heeft `DEFAULT_DNS_SERVER` geen
+  `auth-type`/`auth-key`, dan gaat hij **down**, en daarmee alle lokale virtual servers. In de GUI zie je de
+  pool, `DEFAULT_DNS_SERVER` en `VS-<app>-<eigen dc>` rood, terwijl de server naar de andere FortiADC groen
+  is. Een global-availability-host antwoordt dan het uitwijk-datacenter. De VS-namen blijven staan, dus een
+  controle op namen alleen mist dit.
+- ✅ Met `auth_verify` + dezelfde `auth-key` in de setting én op de serverregels (`DEFAULT_DNS_SERVER` en
+  `FAD-<ander>`), op beide FortiADC's, synchroniseert het. Controle:
   ```
   get global-load-balance setting          # auth-type : auth_verify, auth-key : *
   get global-load-balance servers FAD-FRA  # == [ VS-...-FRA ] in de lijst
@@ -259,7 +265,9 @@ Bevindingen op 8.0.4:
 - *Lab:* `dns.gslb_sync_auth` in `lab/topology.yaml` (standaard `auth_verify`). De controller zet
   `auth-key` in de setting (en probeert `password` als een oudere versie dat weigert). Na de GSLB-config
   controleert hij of elke FortiADC de virtual servers van de andere ziet (`verify_sync()`); zo niet, dan zet
-  hij alles op `none` en meldt dat.
+  hij alles op `none` en meldt dat. Daarna vraagt hij elke FortiADC met `dig` vanaf de client wat hij
+  antwoordt (`verify_answers()`): bij global-availability moet dat de primaire VIP zijn. Dat alleen melden,
+  zonder terugval, want tijdens een demo kan een datacenter bewust uit staan.
 - Automatiseren: de contexthulp (`set ?`) uitlezen via SSH is onbetrouwbaar; juist de eerste regel
   (`*auth-key`) viel weg. Gebruik vaste veldnamen en controleer achteraf met `get`.
 - Let op: een eerder gesynchroniseerde lijst kan blijven staan. Controleer na een wijziging de status, niet
