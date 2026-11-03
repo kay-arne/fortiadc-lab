@@ -12,7 +12,7 @@ import shlex
 import time
 
 from . import adcconfig, fortiadc
-from .config import adc, datacenter_map, domain, inventory, load_topology
+from .config import adc, datacenter_map, domain, gslb_domain, inventory, load_topology
 from .hostctl import host
 
 
@@ -124,6 +124,22 @@ def datacenter(log, topo, arg):
         _run(log, n, "labctl reset && systemctl start labapp")
 
 
+def gslb_check(log, topo, arg=None):
+    """Per GSLB-naam: wat antwoorden beide FortiADC's (direct, authoritative) en de lab-DNS
+    (de hele keten, zoals de desktop)? Laat status, aa-vlag, TTL en IP zien."""
+    from . import adcconfig
+    names = [f"{h}.{gslb_domain(topo)}" for vs in adcconfig.gslb_vses(topo) for h in vs["hosts"]]
+    names += [f"{h}.{domain(topo)}" for vs in adcconfig.gslb_vses(topo) for h in vs["hosts"]]
+    servers = []
+    for a in topo["adcs"]:
+        name, ip = adcconfig.nameserver(topo, a["site"])
+        servers.append(f"--server FAD-{a['site']}={ip}")
+    dns_ip = next(n["ip"] for n in inventory(topo) if n["name"] == topo["dns"]["server"])
+    servers.append(f"--server lab-DNS={dns_ip}")
+    log("Verwacht: FortiADC's 'NOERROR', aa 'ja', TTL ≤ 30; lab-DNS geeft hetzelfde IP (via CNAME).")
+    _run(log, _client(topo), f"labclient gslb {' '.join(names)} {' '.join(servers)}", timeout=120)
+
+
 def gslb_status(log, topo, arg):
     for a in topo["adcs"]:
         if host().status(a["vmid"]) != "running":
@@ -183,6 +199,7 @@ CATALOG = [
         {"id": "dns", "arg": ["shop", "portal", "api", "juice"], "label": "DNS: wat antwoordt de lab-DNS nu?"},
         {"id": "dns_watch", "arg": "shop", "label": "Volg shop 60 s (failover live)"},
         {"id": "dns_watch", "arg": "portal", "label": "Volg portal 60 s"},
+        {"id": "gslb_check", "arg": None, "label": "GSLB-controle: antwoord per DNS-server"},
         {"id": "gslb_status", "arg": None, "label": "GSLB-status op beide FortiADC's"},
         {"id": "datacenter", "arg": ["AMS", "down"], "label": "Amsterdam: alle webservers UIT", "danger": True},
         {"id": "datacenter", "arg": ["AMS", "up"], "label": "Amsterdam: webservers AAN"},
@@ -193,7 +210,7 @@ CATALOG = [
     ]},
 ]
 ACTIONS = {"traffic": traffic, "dns": dns, "dns_watch": dns_watch, "attack": attack, "tls": tls,
-           "server": server, "datacenter": datacenter, "waf_mode": waf_mode, "gslb_status": gslb_status,
+           "server": server, "datacenter": datacenter, "waf_mode": waf_mode, "gslb_status": gslb_status, "gslb_check": gslb_check,
            "reset": reset_all}
 SERVER_ACTIONS = ("fail", "ok", "slow", "fast", "stop", "start", "reset")
 

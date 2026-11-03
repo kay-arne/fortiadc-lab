@@ -30,7 +30,7 @@ Naamgeving (best practice: type-prefix, zodat objecten in de GUI te groeperen zi
 """
 from __future__ import annotations
 
-from .config import adc, datacenter_map, domain, gslb_domain, inventory, pool_members
+from .config import adc, datacenter_map, domain, generated_secret, gslb_domain, inventory, pool_members
 from .pki import cert_name
 
 PERSISTENCE = {"cookie": "PERS-COOKIE", "source": "LB_PERSIS_SRC_ADDR"}
@@ -267,10 +267,30 @@ def gslb_vses(topo, server=None) -> list[dict]:
 # (127.0.0.1): die synchroniseert de eigen virtual servers. De ándere FortiADC komt
 # erbij als FortiADC-SLB-server op zijn management-IP (TCP 5858, auto-sync).
 LOCAL_SERVER = "DEFAULT_DNS_SERVER"
-# Sync-authenticatie: TCP-MD5 vraagt een wachtwoord dat op de andere FortiADC in een
-# (ongedocumenteerde) instelling moet staan. In het lab loopt de sync over het
-# management-LAN; daarom voorlopig zonder.
-GSLB_AUTH = "none"
+
+
+def gslb_auth(topo) -> str:
+    return topo["dns"].get("gslb_sync_auth", "auth_verify")
+
+
+def gslb_key() -> str:
+    """Gedeeld wachtwoord voor de GSLB-sync. Het moet op beide FortiADC's gelijk zijn:
+    in 'config global-load-balance setting' (password) én als auth-key op de server
+    die naar de andere FortiADC wijst."""
+    return generated_secret("gslb_sync_key", 16)
+
+
+def gslb_setting(auth) -> list[str]:
+    lines = ["config global-load-balance setting", f"    set auth-type {auth}"]
+    if auth != "none":
+        lines.append(f"    set password {gslb_key()}")
+    return lines + ["end"]
+
+
+def expected_sync(topo, local) -> dict[str, list[str]]:
+    """Welke virtual servers de FortiADC van 'local' via auto-sync bij de andere hoort te zien."""
+    return {slb_server(site): [vs_name(vs, site) for vs in gslb_vses(topo, "slb") if site in vs["sites"]]
+            for site in datacenter_map(topo) if site != local}
 
 
 def _member(vs, host, site, local) -> tuple[str, str]:
@@ -282,18 +302,22 @@ def _member(vs, host, site, local) -> tuple[str, str]:
     return generic_server(site), host
 
 
-def gslb(topo, local) -> list[str]:
+def gslb(topo, local, auth=None) -> list[str]:
     """GSLB-config voor de FortiADC van datacenter 'local'. Beide FortiADC's kennen
     dezelfde datacenters, pools en hosts; alleen wie 'lokaal' is verschilt."""
+    auth = auth or gslb_auth(topo)
     dcs = datacenter_map(topo)
-    lines = _block("global-load-balance data-center",
-                   [(d["id"], [f"set location {d['location']}"]) for d in dcs.values()])
+    lines = gslb_setting(auth)
+    lines += _block("global-load-balance data-center",
+                    [(d["id"], [f"set location {d['location']}"]) for d in dcs.values()])
     servers = [(LOCAL_SERVER, [f"set data-center {local}"])]
     for site in dcs:
         if site != local:
-            servers.append((slb_server(site), [
-                "set server-type FortiADC-SLB", f"set ip {mgmt_ip(topo, site)}", "set port 5858",
-                f"set data-center {site}", f"set auth-type {GSLB_AUTH}", "set auto-sync enable"]))
+            body = ["set server-type FortiADC-SLB", f"set ip {mgmt_ip(topo, site)}", "set port 5858",
+                    f"set data-center {site}", f"set auth-type {auth}"]
+            if auth != "none":
+                body.append(f"set auth-key {gslb_key()}")
+            servers.append((slb_server(site), body + ["set auto-sync enable"]))
     for site in dcs:
         members = []
         for vs in gslb_vses(topo, "generic"):
@@ -398,8 +422,8 @@ def slb_blocks(topo, site) -> list[tuple[str, list[str]]]:
     ] if b[1]]
 
 
-def gslb_blocks(topo, site) -> list[tuple[str, list[str]]]:
-    return [("GSLB (data centers, servers, pools, hosts)", gslb(topo, site))] if gslb_vses(topo) else []
+def gslb_blocks(topo, site, auth=None) -> list[tuple[str, list[str]]]:
+    return [("GSLB (data centers, servers, pools, hosts)", gslb(topo, site, auth))] if gslb_vses(topo) else []
 
 
 def gslb_cleanup(site) -> list[str]:
@@ -420,5 +444,5 @@ def render(topo) -> str:
             out += [f"# --- {title} ---", *lines, ""]
         out += ["# --- DNS-policy (zonenamen worden na de GSLB-hosts uitgelezen) ---",
                 *dns_policy([f"{gslb_domain(topo)}."]), ""]
-    return "\n".join(out)
+    return "\n".join(out).replace(gslb_key(), "<gedeeld-wachtwoord>")
 

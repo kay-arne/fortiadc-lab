@@ -5,6 +5,7 @@
   labclient dns <naam> [-n 1] [--interval 2]    wat antwoordt de DNS (via de lab-resolver)
   labclient attack <url>                        WAF-testset: wat komt erdoor, wat wordt geblokkeerd
   labclient tls <host>                          certificaatketen en TLS-versie van een VIP
+  labclient gslb <naam>... --server NAAM=IP ...  per DNS-server: status, aa, TTL en antwoord
 
 Alle verzoeken gaan via de lab-DNS en vertrouwen de lab-CA (zoals de desktop),
 dus precies het pad dat een gebruiker zou nemen.
@@ -14,6 +15,7 @@ from __future__ import annotations
 import argparse
 import collections
 import http.cookiejar
+import re
 import socket
 import ssl
 import subprocess
@@ -88,6 +90,30 @@ def cmd_dns(a):
             time.sleep(a.interval)
 
 
+def dig_summary(name, server, recurse) -> dict:
+    """Eén dig-vraag samengevat: status, authoritative, TTL en de A-records."""
+    args = ["dig", f"@{server}", name, "A", "+tries=1", "+time=2"] + ([] if recurse else ["+norecurse"])
+    out = subprocess.run(args, capture_output=True, text=True).stdout
+    status = re.search(r"status: (\w+)", out)
+    flags = re.search(r"flags: ([a-z ]+);", out)
+    answers = re.findall(r"^\S+\s+(\d+)\s+IN\s+(A|CNAME)\s+(\S+)", out, re.M)
+    a_rr = [(int(ttl), v) for ttl, t, v in answers if t == "A"]
+    return {"status": status.group(1) if status else "geen antwoord",
+            "aa": bool(flags and " aa" in f" {flags.group(1)}"),
+            "ttl": min((t for t, _ in a_rr), default=None), "ips": [v for _, v in a_rr]}
+
+
+def cmd_gslb(a):
+    servers = [s.split("=", 1) for s in a.server]
+    print(f"  {'naam':<34} {'server':<14} {'status':<10} {'aa':<3} {'TTL':>5}  antwoord")
+    for name in a.names:
+        for label, ip in servers:
+            r = dig_summary(name, ip, recurse=label.lower().startswith("lab"))
+            print(f"  {name:<34} {label:<14} {r['status']:<10} {'ja' if r['aa'] else '-':<3} "
+                  f"{r['ttl'] if r['ttl'] is not None else '-':>5}  {', '.join(r['ips']) or '-'}")
+        print()
+
+
 def verdict(code, body) -> str:
     low = body.lower()
     if code in (403, 406) or "attack id" in low or "request was blocked" in low or "web application firewall" in low:
@@ -133,8 +159,10 @@ def main():
     d.add_argument("--interval", type=float, default=2)
     k = sub.add_parser("attack"); k.add_argument("url")
     s = sub.add_parser("tls"); s.add_argument("host")
+    g = sub.add_parser("gslb"); g.add_argument("names", nargs="+")
+    g.add_argument("--server", action="append", required=True, help="label=IP, bijv. FAD-AMS=10.80.0.1")
     a = p.parse_args()
-    {"traffic": cmd_traffic, "dns": cmd_dns, "attack": cmd_attack, "tls": cmd_tls}[a.cmd](a)
+    {"traffic": cmd_traffic, "dns": cmd_dns, "attack": cmd_attack, "tls": cmd_tls, "gslb": cmd_gslb}[a.cmd](a)
 
 
 if __name__ == "__main__":

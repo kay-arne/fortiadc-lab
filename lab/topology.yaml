@@ -34,6 +34,10 @@ dns:
   domain: adclab.internal
   gslb_subdomain: gslb       # -> gslb.adclab.internal, NS = FAD-AMS en FAD-FRA (port2)
   gslb_ttl: 30               # TTL van GSLB-antwoorden (s): kort genoeg voor een zichtbare failover
+  # Authenticatie van de GSLB-sync tussen de FortiADC's: auth_verify (sleutel versleuteld,
+  # werkt ook met NAT), TCP_MD5SIG of none. Synchroniseren ze met authenticatie niet,
+  # dan valt de controller terug op none en meldt dat.
+  gslb_sync_auth: auth_verify
   server: dns                # node die BIND draait
 
 # Gemeenschappelijke instellingen van beide FortiADC-VM's. Management (port1, adres per

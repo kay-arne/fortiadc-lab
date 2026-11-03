@@ -200,7 +200,8 @@ config global-load-balance servers
         set ip 10.10.30.212          # management-IP van de andere FortiADC
         set port 5858
         set data-center FRA
-        set auth-type none           # zie hieronder
+        set auth-type auth_verify    # zie hieronder
+        set auth-key <gedeeld-wachtwoord>
         set auto-sync enable
     next
 end
@@ -209,13 +210,30 @@ end
 Controle: `get global-load-balance servers FAD-FRA` toont onderaan de gesynchroniseerde virtual servers
 (`== [ VS-SHOP-FRA ]` …). Die namen gebruik je als `server-member-name` in de GSLB-pools.
 
-### Authenticatie van de sync ❔
+### Authenticatie van de sync 🟡
 
-Met `auth-type TCP_MD5SIG` + `auth-key` bleef de virtual-server-list leeg; met `auth-type none` werd hij
-gevuld. Volgens de handbook moet het wachtwoord *"match the password configured on the FortiADC
-appliance"*, maar welke instelling op de andere FortiADC dat is, staat er niet bij. **Open punt**: uitzoeken
-voordat je dit bij een klant over een niet-vertrouwd netwerk laat lopen. Alternatief: `auth_verify`, ook niet
-getest.
+Met alleen `auth-type TCP_MD5SIG` + `auth-key` op de server bleef de virtual-server-list leeg; met
+`auth-type none` werd hij gevuld. De ontbrekende helft zit in **`config global-load-balance setting`**: daar
+staan het auth-type en het **wachtwoord van de FortiADC zelf**. Dat wachtwoord moet op beide FortiADC's
+gelijk zijn en gelijk aan de `auth-key` op de server die naar de andere wijst. Anders *"will not be able to
+sync"* (CLI-reference).
+
+```
+config global-load-balance setting       # op BEIDE FortiADC's, zelfde wachtwoord
+    set auth-type auth_verify
+    set password <gedeeld-wachtwoord>
+end
+```
+
+- **`auth_verify`** heeft de voorkeur: de sleutel gaat versleuteld na de TCP-handshake en werkt ook met NAT
+  ertussen. `TCP_MD5SIG` werkt niet door NAT heen.
+- 🟡 Nog te bevestigen op 8.0.4 of de sync hiermee tot stand komt (de veldnaam `password` komt uit de
+  documentatie).
+- *Lab:* `dns.gslb_sync_auth` in `lab/topology.yaml` (standaard `auth_verify`). Na de GSLB-config
+  controleert de controller of elke FortiADC de virtual servers van de andere ziet (`verify_sync()`). Zo niet,
+  dan zet hij beide op `none` en meldt dat.
+- Let op: of een eerder gesynchroniseerde lijst leeg wordt als de authenticatie later faalt, is onbekend.
+  Controleer na een wijziging de status, niet alleen of de namen er nog staan.
 
 ### Pools en hosts ✅
 
@@ -426,6 +444,10 @@ get global-load-balance virtual-server-pool <naam>
 
 Let op: `get global-load-balance servers` **zonder** naam toont alleen de namen, niet de virtual servers.
 
+*Lab:* het demo-cockpit heeft **GSLB-controle: antwoord per DNS-server**. Die toont per GSLB-naam en per
+server (FAD-AMS, FAD-FRA, lab-DNS) de status, de `aa`-vlag, de TTL en het IP. Zo zie je direct of de
+TTL-instelling pakt en, tijdens een failover, wanneer het antwoord wisselt.
+
 ---
 
 ## 10. Demo-werkplek (Ubuntu desktop)
@@ -451,6 +473,7 @@ Let op: `get global-load-balance servers` **zonder** naam toont alleen de namen,
 - [ ] Tijdzone (`set zone`, check met `?`) en NTP
 - [ ] WAF-profiel: `heuristic-sql-xss-injection-detect` (8.0)
 - [ ] GSLB: eigen FortiADC = `DEFAULT_DNS_SERVER` (met datacenter); de andere als FortiADC-SLB, port 5858
+- [ ] Sync-authenticatie: `config global-load-balance setting` (auth-type + password) op beide, gelijk aan de `auth-key`
 - [ ] Controle: `get global-load-balance servers <ander>` toont de virtual servers
 - [ ] GSLB-hosts: `domain-name` met punt; `weight` of `global-availability`
 - [ ] `config global-dns-server general` → `gds-status enable`

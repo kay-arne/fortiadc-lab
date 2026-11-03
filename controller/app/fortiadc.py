@@ -604,10 +604,10 @@ def provision_slb(log, topo, site) -> list[str]:
     return problems + cli.errors
 
 
-def provision_gslb(log, topo, site) -> list[str]:
+def provision_gslb(log, topo, site, auth=None) -> list[str]:
     cli = Cli(topo, site)
     try:
-        for title, lines in adcconfig.gslb_blocks(topo, site):
+        for title, lines in adcconfig.gslb_blocks(topo, site, auth):
             log(f"== [{site}] {title} ==")
             n = cli.apply(lines, log, title)
             log(f"[{site}]   {'✔ toegepast' if not n else f'⚠ {n} regel(s) geweigerd'}")
@@ -648,8 +648,22 @@ def provision(log, topo, sites=None):
         prepare(log, topo, site)
         problems[site] += provision_slb(log, topo, site)
     if adcconfig.gslb_vses(topo):
+        auth = adcconfig.gslb_auth(topo)
+        log(f"== GSLB op {', '.join(sites)} (sync-authenticatie: {auth}) ==")
         for site in sites:
-            problems[site] += provision_gslb(log, topo, site)
+            problems[site] += provision_gslb(log, topo, site, auth)
+        missing = verify_sync(log, topo, [a["site"] for a in topo["adcs"]])
+        if missing and auth != "none":
+            log(f"⚠ de FortiADC's synchroniseren niet met {auth}; terugval op auth-type none")
+            for site in sites:
+                provision_gslb(log, topo, site, "none")
+            missing = verify_sync(log, topo, [a["site"] for a in topo["adcs"]])
+            for site in sites:
+                problems[site].append(f"[{site}: GSLB-sync] met {auth} kwam de sync niet tot stand; "
+                                      "nu zonder authenticatie (zie docs/fortiadc-praktijk.md, 6)")
+        for site, gaps in missing.items():
+            if site in problems:
+                problems[site].append(f"[{site}: GSLB-sync] ontbreekt na 90 s: {', '.join(gaps)}")
     for site in sites:
         update_adc_state(site, provisioned=True, problems=problems[site], provisioned_at=time.time())
     total = sum(len(p) for p in problems.values())
@@ -657,6 +671,39 @@ def provision(log, topo, sites=None):
         log(f"⚠ provisioning klaar met {total} waarschuwing(en); zie hierboven. De rest van de config staat.")
     else:
         log("✔ FortiADC's volledig geprovisioned")
+
+
+def synced_members(cli: Cli, server: str) -> list[str]:
+    """Virtual servers die een FortiADC via auto-sync van een GSLB-server kent."""
+    out = cli.run(f"get global-load-balance servers {server}", timeout=30)
+    return re.findall(r"==\s*\[\s*([^\]]+?)\s*\]", out)
+
+
+def verify_sync(log, topo, sites, timeout=90) -> dict[str, list[str]]:
+    """Wacht tot elke FortiADC de virtual servers van de andere kent. Geeft per FortiADC
+    wat er na de timeout nog ontbreekt (leeg = alles in orde)."""
+    deadline = time.time() + timeout
+    while True:
+        missing = {}
+        for site in sites:
+            cli = Cli(topo, site)
+            try:
+                for server, want in adcconfig.expected_sync(topo, site).items():
+                    have = synced_members(cli, server)
+                    gaps = [f"{server}/{v}" for v in want if v not in have]
+                    if gaps:
+                        missing.setdefault(site, []).extend(gaps)
+            finally:
+                cli.close()
+        if not missing or time.time() > deadline:
+            break
+        time.sleep(10)
+    for site in sites:
+        if site in missing:
+            log(f"[{site}] ⚠ GSLB-sync: ontbreekt {', '.join(missing[site])}")
+        else:
+            log(f"[{site}] ✔ GSLB-sync: virtual servers van de andere FortiADC binnen")
+    return missing
 
 
 def gslb_status(log, topo, site):

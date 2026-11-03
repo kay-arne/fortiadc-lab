@@ -48,7 +48,7 @@ desktop ──► lab-DNS (BIND, 10.80.0.53)
 |---|---|
 | "De gewone DNS kent `shop` alleen als verwijzing naar het GSLB-subdomein." | Desktop: `dig shop.adclab.internal` → CNAME `shop.gslb…` en A `10.80.0.111`. |
 | "Dat subdomein is gedelegeerd aan twee nameservers: de FortiADC in Amsterdam en die in Frankfurt." | `dig NS gslb.adclab.internal` → `ns1` en `ns2`. |
-| "Vraag het aan elk van beide: hetzelfde antwoord." | `dig +short @10.80.0.1 shop.gslb.adclab.internal` en `@10.80.0.2`: beide `10.80.0.111`. |
+| "Vraag het aan elk van beide: hetzelfde antwoord." | `dig +short @10.80.0.1 shop.gslb.adclab.internal` en `@10.80.0.2`: beide `10.80.0.111`. Of cockpit → **GSLB-controle: antwoord per DNS-server** (tabel met status, `aa`, TTL en IP per server). |
 | "Ze kennen elkaar: in Amsterdam staat Frankfurt als GSLB-server, en omgekeerd. De virtual servers komen er vanzelf in via auto-sync." | GUI AMS: *Global Load Balance → Servers*: `DEFAULT_DNS_SERVER` (de eigen VS'en) en `FAD-FRA` (die van Frankfurt), elk met hun virtual server list. Cockpit → **GSLB-status op beide FortiADC's**. |
 | "De webshop is actief/standby: Amsterdam primair, Frankfurt uitwijk." | GUI: host `GH-SHOP`, methode *global availability*, pool-lijst AMS → FRA. |
 
@@ -80,8 +80,9 @@ desktop ──► lab-DNS (BIND, 10.80.0.53)
   betekent snellere failover maar meer DNS-verkeer.
 - **Methoden**: *global availability* (actief/standby), *weight* (gewogen, actief/actief, script 8) en
   *topology* (op basis van de locatie van de client).
-- **Sync-beveiliging**: in productie authenticeer je de GSLB-sync (TCP-MD5 of auth-verify). In het lab loopt
-  hij onversleuteld over het managementnetwerk.
+- **Sync-beveiliging**: de FortiADC's authenticeren de GSLB-sync met een gedeeld wachtwoord (`auth_verify`,
+  versleuteld; op beide in `config global-load-balance setting`). Lukt dat niet, dan zet de controller de
+  sync zonder authenticatie en meldt dat in de log.
 - **Generic Host** gebruik je voor servers of load balancers die geen FortiADC zijn, én als meerdere FQDN's
   één VIP delen: zie script 8.
 

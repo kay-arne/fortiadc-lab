@@ -179,9 +179,9 @@ failover. Aandachtspunten:
   (127.0.0.1), die de eigen virtual servers synchroniseert; dat werkt op 8.0.4. Een FortiADC-SLB-server naar
   het eigen management-IP bleef leeg en wordt opgeruimd. De andere FortiADC staat erin als `FAD-<dc>` op zijn
   management-IP (TCP 5858, auto-sync). De GSLB-pools verwijzen naar de gesynchroniseerde namen
-  (`VS-SHOP-AMS`). Controleer met `show global-load-balance servers` of de virtual-server-list van
-  `FAD-<ander>` gevuld wordt. Authenticatie staat voorlopig uit (`GSLB_AUTH` in `adcconfig.py`): bij TCP-MD5
-  moet het wachtwoord overeenkomen met een instelling op de andere FortiADC die nog niet bekend is.
+  (`VS-SHOP-AMS`). De sync wordt geauthenticeerd (`dns.gslb_sync_auth`, standaard `auth_verify`, met hetzelfde
+  wachtwoord in `config global-load-balance setting` op beide). Na de provisioning controleert de controller
+  of de sync werkt en valt hij zo nodig terug op `none`. Zie [docs/fortiadc-praktijk.md](docs/fortiadc-praktijk.md).
 - **REST**: certificaatupload via `/api/upload/certificate_local` en client-SSL-profielen via
   `/api/load_balance_client_ssl_profile`, zoals Fortinets Ansible-collectie het doet.
 - **FortiFlex**: na de day-0 geactiveerd met `execute vm-license <token>` (werkt op 8.0.4; de FortiADC
