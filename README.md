@@ -79,6 +79,13 @@ op zijn uplink-adres: de Toegang-tab haalt dat adres op via de guest agent en to
 wachtwoord. De Proxmox-console werkt ook. Een bestaande desktop krijgt nieuwe afstellingen (RDP, geen
 welkomstwizard) met **Toegang → Desktop bijwerken en herstarten**, zonder herinstallatie.
 
+## Praktijkkennis
+
+[docs/fortiadc-praktijk.md](docs/fortiadc-praktijk.md) bundelt wat we op FortiADC 8.0.4 tegenkwamen en hoe je
+het goed configureert: uitrol op Proxmox (twee disks, day-0 via de console), FortiFlex, tijdzone,
+CLI-verschillen met de documentatie, GSLB met twee FortiADC's (`DEFAULT_DNS_SERVER`, auto-sync), de
+valkuilen van de global DNS, en een diagnosetabel voor `dig`. Bruikbaar los van het lab, ook bij klanten.
+
 ## Demo-scripts
 
 | Script | Use case |

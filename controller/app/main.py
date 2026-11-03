@@ -20,6 +20,8 @@ from .hostctl import host
 
 HERE = Path(__file__).parent
 DOCS = ROOT / "docs" / "demo"
+# Losse documenten naast de demo-scripts (bovenaan in de lijst).
+EXTRA_DOCS = [ROOT / "docs" / "fortiadc-praktijk.md"]
 
 app = FastAPI(title="FortiADC Lab", docs_url=None, redoc_url=None, openapi_url=None)
 app.mount("/static", StaticFiles(directory=HERE / "static"), name="static")
@@ -525,7 +527,7 @@ def access():
 @app.get("/api/docs")
 def docs_list():
     out = []
-    for p in sorted(DOCS.glob("*.md")):
+    for p in [d for d in EXTRA_DOCS if d.exists()] + sorted(DOCS.glob("*.md")):
         first = next((l[2:].strip() for l in p.read_text().splitlines() if l.startswith("# ")), p.stem)
         out.append({"name": p.name, "title": first})
     return {"docs": out}
@@ -533,7 +535,7 @@ def docs_list():
 
 @app.get("/api/docs/{name}", response_class=HTMLResponse)
 def doc(name: str):
-    p = DOCS / Path(name).name
+    p = next((d for d in EXTRA_DOCS if d.name == Path(name).name), DOCS / Path(name).name)
     if not p.exists() or p.suffix != ".md":
         raise HTTPException(404)
     return HTMLResponse(markdown.markdown(p.read_text(), extensions=["tables", "fenced_code"]), headers=NO_CACHE)
