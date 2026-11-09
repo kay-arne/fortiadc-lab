@@ -413,14 +413,14 @@ async function loadAccess() {
     <div class="acc"><h3>FortiADC's</h3>
       <table class="kv">${a.adcs.map((f) => `<tr><th>${esc(f.dc)}</th><td>${f.url ? `<a href="${esc(f.url)}" target="_blank" rel="noopener">${esc(f.url)}</a>` : "-"}
           <div class="hint">${esc(f.name)} · GSLB-DNS op ${esc(f.dns_ip)}</div></td></tr>`).join("")}
-        <tr><th>Login</th><td><span class="mono">${esc(a.adc_user)}</span> / ${secretRow("acc-adcpw", a.adc_password)}</td></tr></table></div>
+        <tr><th>Login</th><td><div class="row"><span class="mono">${esc(a.adc_user)}</span><span class="muted">/</span>${secretRow("acc-adcpw", a.adc_password)}</div></td></tr></table></div>
     <div class="acc"><h3>Ubuntu desktop <span class="tag">VM ${a.desktop_vmid}</span></h3>
       <p>Neem hem over met een RDP-client (Windows: <i>Extern bureaublad</i>, macOS: <i>Windows App</i>) op het
         uplink-adres, of via de Proxmox-console. ${a.desktop_autologin
           ? "De console logt automatisch in; log daar uit voordat je via RDP verbindt."
           : "Log in met de gegevens hieronder; dezelfde gebruiker kan niet tegelijk op de console én via RDP ingelogd zijn."}</p>
-      <table class="kv"><tr><th>RDP</th><td><span class="mono" id="rdp-addr">-</span>
-          <button class="ghost" id="btn-rdp" type="button">Adres ophalen</button></td></tr>
+      <table class="kv"><tr><th>RDP</th><td><div class="row wrap"><span class="mono" id="rdp-addr">-</span>
+          <button class="ghost" id="btn-rdp" type="button">Adres ophalen</button></div></td></tr>
         <tr><th>Gebruiker</th><td><span class="mono">${esc(a.desktop_user)}</span></td></tr>
         <tr><th>Wachtwoord</th><td>${secretRow("acc-dpw", a.desktop_password)}</td></tr>
         <tr><th>Lab-IP</th><td><span class="mono">${esc(a.desktop_lab_ip)}</span></td></tr></table>
