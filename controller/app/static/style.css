@@ -308,3 +308,17 @@ pre.logbox { margin-top: 14px; }
   .head-in nav { flex-wrap: nowrap; }
   .head-in .brand, .head-in nav, .head-in .pill, .head-in .logout, .head-in .theme-toggle { flex: none; }
 }
+
+/* --- lab: componentkaarten (zoals sdwan-aiassist-lab) ------------------------ */
+.tiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); gap: 10px; margin-top: 12px; }
+.tiles.wide { grid-template-columns: repeat(auto-fill, minmax(360px, 1fr)); }
+#topology .comp { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 4px 10px; align-content: start;
+  background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); padding: 12px 14px; cursor: pointer; }
+#topology .comp:hover { border-color: var(--btn-bd); }
+#topology .comp input[type=checkbox] { grid-column: 1; margin: 0; }
+#topology .comp .comp-name { grid-column: 2; font-weight: 600; min-width: 0; overflow-wrap: anywhere; }
+#topology .comp .tag { grid-column: 3; margin: 0; justify-self: end; white-space: nowrap; }
+#topology .comp .comp-sub { grid-column: 2 / -1; display: flex; flex-direction: column; gap: 1px; color: var(--muted); font-size: 12px; line-height: 1.45; }
+#topology .comp .comp-sub span { overflow-wrap: anywhere; }
+#topology .card-head .segsel { font-size: 12.5px; color: var(--muted); font-weight: 500; }
+.seg-meta { margin: 4px 0 0; color: var(--muted); font-size: 12px; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; overflow-wrap: anywhere; }

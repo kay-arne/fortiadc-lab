@@ -113,6 +113,17 @@ function updateSelBar() {
 }
 const check = () => `<input type="checkbox" tabindex="-1" aria-label="selecteer">`;
 
+// Status als label rechts in een tegel (zoals sdwan-aiassist-lab), in plaats van gekleurde tegels.
+const ST = { running: ["ok", "draait"], stopped: ["warn", "gestopt"], absent: ["absent", "ontbreekt"],
+             unknown: ["absent", "onbekend"], ready: ["ok", "gereed"], applied: ["ok", "toegepast"],
+             partial: ["warn", "deels"], warnings: ["warn", "waarschuwingen"], todo: ["absent", "niet toegepast"] };
+const stTag = (s) => { const [cls, txt] = ST[s] || ["absent", s]; return `<span class="tag ${cls}">${esc(txt)}</span>`; };
+function tile(id, name, status, sub, attrs = "") {
+  const lines = sub.filter(Boolean).map((x) => `<span>${x}</span>`).join("");
+  return `<div class="comp" data-comp="${esc(id)}" ${attrs}>${check()}<span class="comp-name">${esc(name)}</span>${stTag(status)}<span class="comp-sub">${lines}</span></div>`;
+}
+const shortVersion = (v) => [(/v\d[\d.]*/.exec(v || "") || [""])[0], (/build\d+/.exec(v || "") || [""])[0]].filter(Boolean).join(" ");
+
 function renderLab(lab) {
   if (!lab) return;
   const bySeg = {};
@@ -121,39 +132,39 @@ function renderLab(lab) {
   const bridges = lab.segments.filter((s) => s.present).length;
   const prov = lab.adcs.filter((a) => a.provisioned);
   const probs = lab.adcs.reduce((n, a) => n + (a.problems || 0), 0);
-  const cfgState = prov.length === lab.adcs.length ? (probs ? `toegepast, ${probs} waarschuwing(en)` : "toegepast op beide")
-    : prov.length ? `toegepast op ${prov.map((a) => a.site).join(", ")}` : "nog niet toegepast";
-  let html = `<div class="purdue"><div class="infra">`;
-  lab.adcs.forEach((f) => {
+  const cfg = prov.length === lab.adcs.length ? (probs ? "warnings" : "applied") : prov.length ? "partial" : "todo";
+  const cfgText = probs ? `${probs} waarschuwing(en) bij de provisioning` : prov.length && prov.length < lab.adcs.length
+    ? `toegepast op ${prov.map((a) => a.site).join(", ")}` : "SLB/WAF per datacenter, GSLB op beide";
+  const card = (title, body, head = "") => `<div class="card"><div class="card-head"><h2>${title}</h2>${head}</div>${body}</div>`;
+
+  let html = card("FortiADC's", `<div class="tiles wide">${lab.adcs.map((f) => {
     const info = f.info || {};
-    html += `<div class="comp${f.reachable ? " comp-ok" : ""}" data-comp="fortiadc:${esc(f.site)}">${check()}<span class="dot ${f.status}"></span>
-      <div><b>${esc(f.name)} · ${f.vmid}</b><div class="ip">FortiADC ${esc(f.dc)} · port1 ${esc(f.mgmt)} · ${esc(f.status)}${f.reachable ? " · GUI bereikbaar" : ""}
-        <br>${(f.ports || []).map((p) => `${esc(p.port)} ${esc(p.ip)}`).join(" · ")}
-        ${info.version ? `<br>${esc(info.version)} · licentie: ${esc(info.license)}` : ""}</div></div></div>`;
-  });
-  html += `
-      <div class="comp${prov.length === lab.adcs.length && !probs ? " comp-ok" : ""}" data-comp="config">${check()}<span class="dot ${prov.length ? (probs ? "stopped" : "running") : "absent"}"></span>
-        <div><b>FortiADC-configuratie</b><div class="ip">${cfgState} · SLB/WAF per datacenter, GSLB op beide</div></div></div>
-      <div class="comp" data-comp="network">${check()}<span class="dot ${bridges === lab.segments.length ? "running" : bridges ? "stopped" : "absent"}"></span>
-        <div><b>Netwerk</b><div class="ip">${bridges}/${lab.segments.length} lab-bridges aanwezig</div></div></div>
-      <div class="comp" data-comp="template">${check()}<span class="dot ${t.status === "stopped" ? "running" : t.status}"></span>
-        <div><b>LXC-template · ${t.vmid}</b><div class="ip">${t.status === "absent" ? "nog niet gebouwd" : "basis voor alle containers"}</div></div></div>
-      <div class="comp" data-comp="desktop">${check()}<span class="dot ${d.status}"></span>
-        <div><b>${esc(d.name)} · ${d.vmid}</b><div class="ip">Ubuntu desktop · ${esc(d.ip)} · ${esc(d.status)}
-          ${d.status === "running" ? ' · <a href="#" id="desk-progress">installatiestatus</a>' : ""}</div></div></div>
-    </div>`;
+    const ports = (f.ports || []).map((p) => `${esc(p.port)} ${esc(p.ip)}`).join(" · ");
+    return tile(`fortiadc:${f.site}`, f.name, f.status, [
+      `${esc(f.dc)} · VMID ${f.vmid}`,
+      `port1 ${esc(f.mgmt || "-")}${f.reachable ? " · GUI bereikbaar" : ""}`,
+      ports,
+      info.version ? `${esc(shortVersion(info.version))} · licentie ${esc(info.license)}` : ""]);
+  }).join("")}</div>`);
+  html += card("Configuratie en basis", `<div class="tiles">
+    ${tile("config", "FortiADC-configuratie", cfg, [cfgText])}
+    ${tile("network", "Netwerk", bridges === lab.segments.length ? "ready" : bridges ? "partial" : "absent",
+      [`${bridges}/${lab.segments.length} lab-bridges`, lab.segments.map((s) => esc(s.bridge)).join(", ")])}
+    ${tile("template", "LXC-template", t.status === "stopped" ? "ready" : t.status,
+      [`VMID ${t.vmid}`, t.status === "absent" ? "nog niet gebouwd" : "basis voor alle containers"])}
+    ${tile("desktop", d.name, d.status, [`Ubuntu desktop · VMID ${d.vmid}`, `lab-IP ${esc(d.ip)}`,
+      d.status === "running" ? '<a href="#" id="desk-progress">installatiestatus</a>' : ""])}
+  </div>`);
   lab.segments.forEach((s) => {
-    const ports = Object.entries(s.adc || {}).map(([k, v]) => `FAD-${esc(k)} ${esc(v.port)} ${esc(v.ip)}`).join(", ");
-    html += `<div class="zone"><div class="meta"><label class="segsel"><input type="checkbox" data-seg-select="${esc(s.id)}"> <b>${esc(s.name)}</b></label>
-      <div class="lvl">${esc(s.bridge)} ${s.present ? "" : "(ontbreekt)"} · ${esc(s.subnet)}<br>${ports}</div></div><div class="nodes">`;
-    (bySeg[s.id] || []).forEach((n) => {
-      html += `<div class="node" data-comp="node:${esc(n.name)}" data-seg="${esc(s.id)}">
-        <div class="n">${check()}<span class="dot ${n.status}"></span>${esc(n.hostname || n.name)}</div>
-        <div class="ip">${esc(n.ip)} · ${esc(n.role)}${n.app ? " · " + esc(n.app) : ""} · ${n.vmid}</div></div>`;
-    });
-    html += `</div></div>`;
+    const ports = Object.entries(s.adc || {}).map(([k, v]) => `FAD-${esc(k)} ${esc(v.port)} ${esc(v.ip)}`);
+    const nodes = bySeg[s.id] || [];
+    const head = nodes.length ? `<label class="segsel"><input type="checkbox" data-seg-select="${esc(s.id)}"> alles</label>` : "";
+    html += card(esc(s.name), `<p class="seg-meta">${[`${esc(s.bridge)}${s.present ? "" : " (ontbreekt)"}`, esc(s.subnet), ...ports].join(" · ")}</p>
+      <div class="tiles">${nodes.map((n) => tile(`node:${n.name}`, n.hostname || n.name, n.status,
+        [`${esc(n.ip)} · ${esc(n.role)}${n.app ? " · " + esc(n.app) : ""}`, `VMID ${n.vmid}`], `data-seg="${esc(s.id)}"`)).join("")
+        || '<span class="muted">geen containers</span>'}</div>`, head);
   });
-  $("#topology").innerHTML = html + "</div>";
+  $("#topology").innerHTML = html;
   $$("#topology [data-comp]").forEach((el) => el.addEventListener("click", (e) => {
     if (e.target.id === "desk-progress") return;
     const id = el.dataset.comp;
