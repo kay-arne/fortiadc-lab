@@ -18,12 +18,12 @@
     <button data-tab="lab">2. Lab</button>
     <button data-tab="demo">3. Demo-cockpit</button>
     <button data-tab="access">4. Toegang &amp; scripts</button>
-    <button data-tab="updates">Updates <span id="update-dot" class="dot-new" hidden></span></button>
   </nav>
-  <span id="hoststatus" class="pill">…</span>
-  <button id="version-pill" class="pill version" data-goto="updates" title="Versie van de controller">…</button>
-  <form method="post" action="/logout" class="logout"><button type="submit" class="ghost">Uitloggen</button></form>
-  <button type="button" class="theme-toggle ghost" data-theme-toggle title="Wissel tussen licht en donker" aria-label="Wissel tussen licht en donker"><svg class="moon" viewBox="0 0 24 24"><path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"/></svg><svg class="sun" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41"/></svg></button>
+  <span id="hoststatus" class="pill bad" hidden>host niet bereikbaar</span>
+  <button id="btn-joblog" class="pill joblog" title="Joblog openen" hidden>Joblog<span id="job-dot" class="dot-run" hidden></span></button>
+  <button id="version-pill" class="pill version" data-goto="updates" title="Versie van de controller; klik om bij te werken"><span id="version-text">…</span><span id="update-dot" class="dot-new" title="Update beschikbaar" hidden></span></button>
+  <button type="button" class="theme-toggle ghost" data-theme-toggle title="Licht/donker" aria-label="Licht/donker"><svg class="moon" viewBox="0 0 24 24"><path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"/></svg><svg class="sun" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41"/></svg></button>
+  <form method="post" action="/logout" class="logout"><button type="submit" class="theme-toggle ghost" title="Uitloggen" aria-label="Uitloggen"><svg viewBox="0 0 24 24"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><path d="M16 17l5-5-5-5"/><path d="M21 12H9"/></svg></button></form>
 </div>
 </header>
 
@@ -233,7 +233,6 @@
     <span class="logbtns"><button id="log-stop" class="ghost" hidden>Stop</button><button id="log-close" title="Venster sluiten (de taak loopt door)">×</button></span></div>
   <pre id="log-body"></pre>
 </aside>
-<button id="job-pill" hidden></button>
 
 <div id="viewer" class="modal" hidden>
   <div class="modal-box">

@@ -30,10 +30,12 @@ document.addEventListener("click", (e) => {
 // --- job log ---------------------------------------------------------------
 let logTimer = null;
 let activeJobId = null;
+let logDismissed = false;
+let recentJobs = [];
 function followJob(job, onDone) {
   activeJobId = job.id;
+  logDismissed = false;
   document.body.classList.add("logopen");
-  $("#job-pill").hidden = true;
   $("#log-stop").hidden = false;
   $("#log-title").textContent = job.title;
   $("#log-body").textContent = "";
@@ -57,12 +59,17 @@ function followJob(job, onDone) {
     }
   }, 1000);
 }
-$("#log-close").onclick = () => { document.body.classList.remove("logopen"); clearInterval(logTimer); refresh(); };
+$("#log-close").onclick = () => {
+  document.body.classList.remove("logopen"); clearInterval(logTimer); activeJobId = null; logDismissed = true; refresh();
+};
+$("#btn-joblog").onclick = () => {      // lopende job, anders de laatste; het hele log wordt opnieuw getoond
+  const job = recentJobs.find((j) => j.status === "running") || recentJobs[0];
+  if (job) followJob(job);
+};
 $("#log-stop").onclick = async () => {
   if (!activeJobId || !confirm("De lopende taak stoppen?")) return;
   try { await post(`/api/jobs/${activeJobId}/stop`); } catch (e) { alert(e.message); }
 };
-$("#job-pill").onclick = () => { if ($("#job-pill")._job) followJob($("#job-pill")._job); };
 
 async function action(path, data, onDone) {
   try { followJob(await post(path, data), onDone); } catch (e) { alert(e.message); }
@@ -509,12 +516,12 @@ let currentCommit = null;
 async function loadVersion() {
   const v = await api("/api/version");
   if (!v.git) {
-    $("#version-pill").textContent = "geen git";
+    $("#version-text").textContent = "geen git";
     $("#upd-current").textContent = "Geen git-checkout gevonden; bijwerken via de UI is niet mogelijk.";
     return v;
   }
   currentCommit = v.commit;
-  $("#version-pill").textContent = v.commit;
+  $("#version-text").textContent = v.commit;
   $("#upd-current").innerHTML = `<span class="mono">${esc(v.commit)}</span> ${esc(v.subject)} <span class="hint">(${esc(fmtDate(v.date))})</span>`;
   $("#upd-branch").textContent = v.branch;
   $("#app-banner").hidden = !v.labapp_outdated;
@@ -587,17 +594,14 @@ async function refresh() {
     const st = await api("/api/status");
     renderChecks(st.settings.checks);
     renderLab(st.lab);
-    const hs = $("#hoststatus");
-    hs.textContent = st.host_error ? "Proxmox: geen verbinding" : "Proxmox: verbonden";
-    hs.className = "pill " + (st.host_error ? "bad" : "ok");
+    const hs = $("#hoststatus");      // alleen tonen als de Proxmox host niet bereikbaar is
+    hs.hidden = !st.host_error;
     hs.title = st.host_error || "";
-    const run = (st.jobs || []).find((j) => j.status === "running");
-    const pill = $("#job-pill");
-    if (run && !document.body.classList.contains("logopen")) {
-      pill._job = { id: run.id, title: run.title };
-      pill.textContent = `⟳ ${run.title} loopt — toon log`;
-      pill.hidden = false;
-    } else pill.hidden = true;
+    recentJobs = st.jobs || [];
+    const run = recentJobs.find((j) => j.status === "running");
+    $("#btn-joblog").hidden = !recentJobs.length;
+    $("#job-dot").hidden = !run;
+    if (run && !activeJobId && !logDismissed) followJob(run);      // na (her)login: lopende job weer volgen
     loadProblems();
   } catch (e) { console.error(e); }
 }
