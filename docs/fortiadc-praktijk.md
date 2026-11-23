@@ -128,6 +128,35 @@ FortiADC onbereikbaar wordt, en daarna tot hij terug is; anders zie je nog net d
 
 *Lab:* `fortiadc.license_status()`, `ensure_license()`, `wait_reboot()`.
 
+### FortiFlex via de API 🟡
+
+Je hoeft geen tokens met de hand te maken: met een API-gebruiker uit de FortiCloud IAM-portal (rechten op
+FortiFlex) regelt de controller de entitlements zelf, net als in het SD-WAN-lab:
+
+| Stap | API (FortiFlex v2) |
+|---|---|
+| Configuratie `<prefix>-fad` zoeken of aanmaken | `configs/list`, `configs/create` |
+| Per FortiADC een entitlement, vóór de uitrol op ACTIVE | `entitlements/vm/create` (`skipPending`), `entitlements/reactivate` |
+| Token voor `execute vm-license`; een gebruikte token vervangen | `entitlements/vm/token` |
+| FortiADC verwijderd: entitlement stoppen (geen punten), bij de volgende uitrol hergebruiken | `entitlements/stop` |
+
+Producttype en parameters voor **FortiADC-VM**, volgens Fortinets Terraform-provider (`FAD_VM`) en de
+Ansible-collectie:
+
+| Veld | ID | Waarden |
+|---|---|---|
+| `productTypeId` | **9** | FortiADC Virtual Machine |
+| CPU | **25** | `1`, `2`, `4`, `8`, `16`, `32` (lab: `fortiadc.cores`) |
+| Servicepakket | **26** | `FDVFC247` (FortiCare Premium), `FDVNET` (Network Security), `FDVAPP` (Application Security), `FDVAI` (AI Security) |
+
+- Het lab kiest `FDVAPP`: daar zitten de WAF-signatures in die de demo's gebruiken.
+- 🟡 Nog te bevestigen: de ID's tegen een echte `configs/create`-respons, en of een FortiADC-token direct na het
+  aanmaken werkt. De controller probeert `execute vm-license` tot vier keer met 30 s ertussen.
+- FortiFlex kan VM-entitlements niet verwijderen: stoppen beëindigt het verbruik.
+
+*Lab:* `controller/app/fortiflex.py` (Setup → Licentie → *FortiFlex via API*), `fortiflex:` in
+`lab/topology.yaml`.
+
 ---
 
 ## 4. Tijdzone ✅ / 🟡

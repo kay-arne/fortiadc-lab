@@ -251,6 +251,12 @@ function fillSettings(s) {
   $("#i-adminpw").value = s.adc_admin_password || "";
   const lic = $(`input[name=lic][value=${s.license_mode || "none"}]`);
   if (lic) lic.checked = true;
+  const ff = s.fortiflex_api || {};
+  $("#i-ff-user").value = ff.username || "";
+  $("#i-ff-pw").value = "";
+  $("#i-ff-pw").placeholder = ff.password_set ? "ongewijzigd" : "";
+  $("#i-ff-prog").value = ff.program_serial || "";
+  $("#i-ff-acc").value = ff.account_id || "";
   const du = s.desktop_uplink || { mode: "dhcp" };
   $("#i-dmode").value = du.mode;
   $("#i-dip").value = du.ip || "";
@@ -267,10 +273,53 @@ function toggles() {
   $$("[data-dmode]").forEach((el) => (el.hidden = el.dataset.dmode !== dm));
   const v = ($("input[name=lic]:checked") || {}).value;
   $$("[data-lic]").forEach((el) => (el.hidden = el.dataset.lic !== v));
-  $("#lic-per-adc").hidden = v === "none";
+  $("#lic-per-adc").hidden = v === "none" || v === "fortiflex_api";
+  if (v === "fortiflex_api") loadFlex();
 }
 ["#i-wanmode", "#i-dmode"].forEach((s) => $(s).addEventListener("change", toggles));
 $$("input[name=lic]").forEach((r) => r.addEventListener("change", toggles));
+
+// --- FortiFlex via API (zelfde beheer als in sdwan-aiassist-lab) ---------------
+async function ffCall(url, method = "POST", body) {
+  const out = $("#ff-out"); out.hidden = false; out.textContent = "bezig…";
+  try {
+    const r = await (method === "GET" ? api(url) : post(url, body));
+    out.textContent = r.log ? r.log.join("\n") || "klaar" : JSON.stringify(r, null, 2);
+  } catch (e) { out.textContent = "Fout: " + e.message; }
+  loadFlex();
+}
+async function loadFlex() {
+  const el = $("#ff-table"); if (!el || $("#ff-api").hidden) return;
+  if (!el.children.length) el.innerHTML = '<span class="muted">laden…</span>';
+  let rows;
+  try { rows = await api("/api/fortiflex/entitlements"); } catch (e) { el.innerHTML = `<span class="warn">${esc(e.message)}</span>`; return; }
+  const st = (s) => !s ? '<span class="tag absent">geen</span>' : `<span class="tag ${s === "ACTIVE" ? "ok" : s === "PENDING" ? "" : "warn"}">${esc(s)}</span>`;
+  const ICON = {
+    create: '<path d="M12 5v14M5 12h14"/>',
+    token: '<path d="M21 12a9 9 0 1 1-3-6.7"/><path d="M21 4v5h-5"/>',
+    stop: '<rect x="6" y="6" width="12" height="12" rx="2"/>',
+    reactivate: '<path d="M7 4l13 8-13 8z"/>',
+    unlink: '<path d="M10 13a5 5 0 0 0 7 0l3-3a5 5 0 0 0-7-7l-1 1"/><path d="M14 11a5 5 0 0 0-7 0l-3 3a5 5 0 0 0 7 7l1-1"/><path d="M3 3l18 18"/>',
+  };
+  const TIP = { create: "Entitlement aanmaken", token: "Nieuwe token genereren", stop: "Stoppen (geen verbruik meer)", reactivate: "Reactiveren", unlink: "Ontkoppelen van de controller" };
+  const btn = (d, a, cls = "") => `<button type="button" class="icon-btn ${cls}" data-ffa="${a}" data-ffd="${d}" data-tip="${TIP[a]}" aria-label="${TIP[a]}"><svg viewBox="0 0 24 24">${ICON[a]}</svg></button>`;
+  el.innerHTML = `<table class="kv fftable"><tr><th>FortiADC</th><th>Entitlement</th><th>Status</th><th>Token</th><th></th></tr>${rows.map((r) => `<tr>
+    <td>${esc(r.label)}</td><td class="mono">${esc(r.serial || "-")}</td><td>${st(r.status)}</td>
+    <td>${r.token_status === "USED" ? "gebruikt" : r.token_status === "NOTUSED" ? "ongebruikt" : "-"}</td>
+    <td><div class="ffbtns">${!r.serial ? btn(r.device, "create", "primary")
+      : btn(r.device, "token") + (r.status === "STOPPED" ? btn(r.device, "reactivate") : btn(r.device, "stop")) + btn(r.device, "unlink", "ghost")}</div></td></tr>`).join("")}</table>`;
+}
+document.addEventListener("click", (e) => {
+  const b = e.target.closest("[data-ffa]"); if (!b) return;
+  if (b.dataset.ffa === "unlink" && !confirm("Koppeling met deze entitlement verwijderen? (De entitlement zelf blijft in FortiFlex bestaan; stop hem eerst.)")) return;
+  ffCall("/api/fortiflex/entitlement", "POST", { device: b.dataset.ffd, action: b.dataset.ffa });
+});
+$("#ff-test").onclick = () => ffCall("/api/fortiflex/test");
+$("#ff-configs").onclick = () => ffCall("/api/fortiflex/configs");
+$("#ff-refresh").onclick = () => loadFlex();
+$("#ff-activate-all").onclick = () => ffCall("/api/fortiflex/entitlement", "POST", { device: "all", action: "activate" });
+$("#ff-create-all").onclick = () => ffCall("/api/fortiflex/entitlement", "POST", { device: "all", action: "create" });
+$("#ff-stop").onclick = () => confirm("Alle FortiFlex-entitlements van dit lab stoppen?") && ffCall("/api/fortiflex/entitlement", "POST", { device: "all", action: "stop" });
 
 function bindEyes(root = document) {
   root.querySelectorAll("[data-eye]").forEach((b) => b.addEventListener("click", () => {
@@ -301,7 +350,8 @@ const savePayload = {
                 wan_dns1: $("#i-dns1").value.trim(), wan_dns2: $("#i-dns2").value.trim() }),
   admin: () => ({ admin_password: $("#i-adminpw").value }),
   license: () => ({ license_mode: ($("input[name=lic]:checked") || {}).value || "none",
-                    fortiflex_tokens: Object.fromEntries([...$$("[data-token]")].map((i) => [i.dataset.token, i.value.trim()])) }),
+                    fortiflex_tokens: Object.fromEntries([...$$("[data-token]")].map((i) => [i.dataset.token, i.value.trim()])),
+                    fortiflex_api: Object.fromEntries([...$$("[data-ff]")].map((i) => [i.dataset.ff, i.value.trim()])) }),
   desktop: () => ({ desktop_mode: $("#i-dmode").value, desktop_ip: $("#i-dip").value.trim(),
                     desktop_gateway: $("#i-dgw").value.trim(), desktop_dns: $("#i-ddns").value.trim() }),
 };

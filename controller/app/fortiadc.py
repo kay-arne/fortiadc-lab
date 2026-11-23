@@ -56,7 +56,8 @@ def set_timezone(cli, log, site, tz: str):
 
 
 def license_of(site) -> dict:
-    """{'mode': none|file|fortiflex, 'file': ..., 'token': ...} voor deze FortiADC."""
+    """{'mode': none|file|fortiflex|fortiflex_api, 'file': ..., 'token': ...} voor deze FortiADC.
+    Bij fortiflex_api haalt ensure_license() de token pas op als hij nodig is."""
     s = get_state()
     return {"mode": s.get("license_mode", "none"),
             "file": (s.get("license_files") or {}).get(site),
@@ -455,6 +456,20 @@ def license_status(log, topo, site):
     return info
 
 
+def _vm_license(log, topo, site, token, attempts=1, pause=30) -> bool:
+    """execute vm-license; True als de FortiADC hem aanneemt (hij herstart dan)."""
+    for i in range(1, attempts + 1):
+        log(f"[{site}] FortiFlex-token activeren (execute vm-license); de FortiADC herstart daarna")
+        out = ssh_cli(topo, site, [f"execute vm-license {token}"], timeout=120)
+        log(f"[{site}]   " + " ".join(out.split())[-200:])
+        if not (re.search(r"fail|error|invalid", out, re.I) and not re.search(r"rebooting", out, re.I)):
+            return True
+        if i < attempts:
+            log(f"[{site}]   token (nog) niet geaccepteerd; opnieuw over {pause} s ({i}/{attempts})")
+            time.sleep(pause)
+    return False
+
+
 def ensure_license(log, topo, site):
     info = license_status(log, topo, site)
     if info["licensed"]:
@@ -466,11 +481,15 @@ def ensure_license(log, topo, site):
         log(f"[{site}]   upload: {'ok' if ok else 'mislukt'} {'' if ok else detail}")
         if not ok:
             return
+    elif lic["mode"] == "fortiflex_api":
+        from . import fortiflex
+        token = fortiflex.acquire(log, topo, f"fad:{site}")
+        # Een net aangemaakte of gereactiveerde entitlement is soms pas na een minuut bruikbaar.
+        if not _vm_license(log, topo, site, token, attempts=4):
+            log(f"[{site}] ⚠ token geweigerd; controleer de entitlement onder Setup > Licentie. Verder zonder licentie.")
+            return
     elif lic["mode"] == "fortiflex" and lic["token"]:
-        log(f"[{site}] FortiFlex-token activeren (execute vm-license); de FortiADC herstart daarna")
-        out = ssh_cli(topo, site, [f"execute vm-license {lic['token']}"], timeout=120)
-        log(f"[{site}]   " + " ".join(out.split())[-200:])
-        if re.search(r"fail|error|invalid", out, re.I) and not re.search(r"rebooting", out, re.I):
+        if not _vm_license(log, topo, site, lic["token"]):
             # Geen herstart: de FortiADC weigerde het token (al gebruikt, verlopen of ongeldig).
             log(f"[{site}] ⚠ token geweigerd; controleer het token in het FortiFlex-portal. Verder zonder licentie.")
             return

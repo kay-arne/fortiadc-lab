@@ -51,6 +51,13 @@ fortiadc:
     mode: static             # static | dhcp  (instelbaar in de web UI)
     gateway: ""
 
+# --- FortiFlex (alleen bij licentiemodus 'FortiFlex via API') --------------------------------
+# De controller maakt één configuratie <prefix>-fad (FortiADC-VM) aan als hij nog niet bestaat, en daaruit per
+# FortiADC één entitlement. cpu volgt standaard fortiadc.cores. Pas de waarden aan vóór de eerste uitrol;
+# wijzigingen gelden niet voor een bestaande configuratie (pas die in het FortiFlex-portaal aan).
+fortiflex:
+  fad: {service: FDVAPP}     # FDVFC247 (FortiCare) | FDVNET (Network Security) | FDVAPP (Application Security, WAF) | FDVAI
+
 # 'adc': welke FortiADC met welke poort en welk IP in het segment hangt.
 segments:
   - id: client

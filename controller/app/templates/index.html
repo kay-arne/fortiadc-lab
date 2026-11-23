@@ -101,14 +101,40 @@
       <p class="help">Twee FortiADC-VM's, dus twee licenties. FortiADC-VM wordt per vCPU gelicenseerd (het lab gebruikt er
         standaard 2, dus VM02). Voor de WAF-signatures is FortiGuard nodig.</p>
       <div class="choices">
+        <label class="choice"><input type="radio" name="lic" value="fortiflex_api"><span><b>FortiFlex via API</b>
+          <small>De controller maakt, reactiveert en stopt de entitlements zelf.</small></span></label>
         <label class="choice"><input type="radio" name="lic" value="file"><span><b>Licentiebestand</b>
           <small><code>.lic</code> uit FortiCare; na de eerste boot via de REST API geüpload.</small></span></label>
-        <label class="choice"><input type="radio" name="lic" value="fortiflex"><span><b>FortiFlex-token</b>
-          <small>Na de boot geactiveerd met <code>execute vm-license</code>.</small></span></label>
+        <label class="choice"><input type="radio" name="lic" value="fortiflex"><span><b>FortiFlex-tokens</b>
+          <small>Per FortiADC een token (handmatig), geactiveerd met <code>execute vm-license</code>.</small></span></label>
         <label class="choice"><input type="radio" name="lic" value="none"><span><b>Geen / later</b>
           <small>Evaluatiemodus.</small></span></label>
       </div>
       <div id="lic-per-adc" class="grid2"></div>
+      <div id="ff-api" data-lic="fortiflex_api" hidden>
+        <p class="hint">Een API-gebruiker uit de FortiCloud IAM-portal met rechten op FortiFlex. De controller maakt één
+          configuratie <code>&lt;prefix&gt;-fad</code> (FortiADC-VM, vCPU's volgens de topologie, servicepakket
+          <code>FDVAPP</code>: Application Security met WAF) en per FortiADC een entitlement. Pas de parameters aan onder
+          <code>fortiflex:</code> in <code>lab/topology.yaml</code>.</p>
+        <div class="grid2">
+          <div class="field"><label for="i-ff-user">API-gebruiker</label><input id="i-ff-user" data-ff="username" autocomplete="off"></div>
+          <div class="field"><label for="i-ff-pw">API-wachtwoord</label><input id="i-ff-pw" type="password" data-ff="password" autocomplete="new-password"></div>
+          <div class="field"><label for="i-ff-prog">Programma-serienummer</label><input id="i-ff-prog" data-ff="program_serial" placeholder="leeg = eerste programma"></div>
+          <div class="field"><label for="i-ff-acc">Account-ID</label><input id="i-ff-acc" data-ff="account_id" placeholder="optioneel"></div>
+        </div>
+        <div class="actions"><button type="button" id="ff-test">Verbinding testen</button>
+          <button type="button" id="ff-configs">Configuratie aanmaken</button>
+          <button type="button" id="ff-refresh">Vernieuwen</button></div>
+        <h3 class="subhead">Entitlements van dit lab</h3>
+        <p class="hint">Bij elke (her)uitrol van een FortiADC haalt de controller automatisch een nieuwe token uit de gekoppelde
+          entitlement; bij verwijderen stopt hij de entitlement. FortiFlex kan VM-entitlements niet verwijderen:
+          <b>Stoppen</b> beëindigt het verbruik, <b>Ontkoppelen</b> haalt de koppeling uit de controller.</p>
+        <div id="ff-table"></div>
+        <div class="actions"><button type="button" id="ff-create-all" class="primary">Alle entitlements aanmaken</button>
+          <button type="button" id="ff-activate-all">Alle activeren</button>
+          <button type="button" id="ff-stop">Alle stoppen</button></div>
+        <pre id="ff-out" class="logbox" hidden></pre>
+      </div>
       <div class="actions"><button class="primary" data-save="license">Opslaan</button><span class="result" data-result="license"></span></div>
     </div>
 

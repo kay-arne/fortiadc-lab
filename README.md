@@ -53,8 +53,8 @@ de web UI. Draai je de oneliner opnieuw, dan biedt hij **Bijwerken** aan.
 
 1. **Setup**: upload de twee images uit de FortiADC KVM-zip (`boot.qcow2` en `data.qcow2`, één set voor
    beide FortiADC's), stel per FortiADC een
-   management-IP in plus gateway, DNS en het admin-wachtwoord, en kies per FortiADC de licentie (`.lic` of
-   FortiFlex-token).
+   management-IP in plus gateway, DNS en het admin-wachtwoord, en kies de licentie: **FortiFlex via API** (de controller maakt
+   en beheert de entitlements zelf), per FortiADC een `.lic` of een FortiFlex-token, of evaluatie.
 2. **Lab → Volledig lab uitrollen**. De controller:
    1. maakt de bridges `vmbr800`/`810`/`820` (zonder fysieke poort, zonder host-IP);
    2. maakt per datacenter een FortiADC-VM volgens Fortinets KVM-installatiegids: `boot.qcow2` als eerste
@@ -187,6 +187,10 @@ failover. Aandachtspunten:
 - **FortiFlex**: na de day-0 geactiveerd met `execute vm-license <token>` (werkt op 8.0.4; de FortiADC
   herstart). Een gelicenseerde FortiADC herken je aan een echt serienummer (zonder licentie:
   `FADV0000000TRIAL`); die wordt bij een volgende provisioning niet opnieuw geactiveerd.
+- **FortiFlex via API** (zoals in het SD-WAN-lab): de controller maakt configuratie `<prefix>-fad` en per
+  FortiADC een entitlement, zet ze vóór de uitrol op ACTIVE, haalt bij elke uitrol een verse token en stopt de
+  entitlement als je de FortiADC verwijdert. FortiADC-VM is productype 9 (CPU = parameter 25, servicepakket = 26);
+  zie [docs/fortiadc-praktijk.md](docs/fortiadc-praktijk.md), hoofdstuk 3.
 - **Docker in LXC** (Juice Shop, DVWA) vraagt `nesting=1,keyctl=1` en een storage met overlay-ondersteuning
   (ZFS 2.2+/LVM-thin). Linked clones werken op LVM-thin/ZFS; op `dir`-storage valt de controller terug op
   full clones (meer schijfruimte).

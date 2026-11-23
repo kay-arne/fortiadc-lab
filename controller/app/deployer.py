@@ -802,9 +802,25 @@ def desktop_progress() -> str:
 # --------------------------------------------------------------------------
 # orchestratie
 # --------------------------------------------------------------------------
+def _flex_activate(log, topo, sites=None):
+    """Bij FortiFlex via API: entitlements vóór de uitrol op ACTIVE, zodat de token direct werkt."""
+    from . import fortiflex
+    if fortiflex.is_api_mode() and sites != []:
+        fortiflex.activate_all(log, topo, None if sites is None else [f"fad:{s}" for s in sites])
+
+
+def _flex_release(log, sites):
+    """Bij FortiFlex via API: entitlement stoppen zodra de FortiADC weg is (geen punten meer; hergebruik bij uitrol)."""
+    from . import fortiflex
+    if fortiflex.is_api_mode():
+        for site in sites:
+            fortiflex.release(log, f"fad:{site}")
+
+
 def deploy_all(log):
     topo = load_topology()
     pki.ensure_ca(topo)
+    _flex_activate(log, topo)
     log("== 1/6 netwerksegmenten ==")
     ensure_bridges(log, topo)
     log("== 2/6 FortiADC's (één per datacenter) ==")
@@ -851,6 +867,7 @@ def destroy_selected(log, items):
         if f"fortiadc:{a['site']}" in items:
             _destroy_vmid(log, h, a["vmid"], a["hostname"])
             update_adc_state(a["site"], provisioned=False, info=None, problems=[])
+            _flex_release(log, [a["site"]])
     if "template" in items:
         try:
             _destroy_vmid(log, h, template_vmid(topo), vm_name(topo, "template"))
@@ -875,6 +892,7 @@ def deploy_selected(log, items, recreate=False):
         log("== gekozen componenten eerst verwijderen ==")
         destroy_selected(log, items - {"network", "config"})
     sites = [a["site"] for a in topo["adcs"] if f"fortiadc:{a['site']}" in items]
+    _flex_activate(log, topo, sites)
     if sites or items & {"network", "desktop"} or nodes:
         log("== netwerksegmenten ==")
         ensure_bridges(log, topo)
@@ -909,6 +927,7 @@ def destroy_all(log, remove_template=False, remove_net=False):
         log(f"{tool} destroy {vmid}")
         h.run([tool, "stop", str(vmid)], check=False)
         h.run([tool, "destroy", str(vmid), "--purge", "1"], check=False)
+    _flex_release(log, [a["site"] for a in topo["adcs"]])
     if remove_net:
         remove_bridges(log, topo)
     update_state(deployed=False, adc={})

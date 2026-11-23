@@ -110,6 +110,7 @@ def public_state() -> dict:
         images[kind] = {"name": s.get(f"adc_{kind}_upload") or name,
                         "size": (UPLOADS / name).stat().st_size if name and (UPLOADS / name).exists() else None}
     lic_mode = s.get("license_mode", "none")
+    flex = s.get("fortiflex_api") or {}
     checks = [
         {"id": "host", "label": "Proxmox-koppeling", "ok": HOST_FILE.exists()},
         {"id": "image", "label": "FortiADC-images", "ok": all(i["size"] for i in images.values())},
@@ -117,11 +118,14 @@ def public_state() -> dict:
          "ok": wan["mode"] == "dhcp" or bool(wan.get("gateway") and all(a["mgmt"] for a in adcs))},
         {"id": "admin", "label": "Admin-wachtwoord", "ok": bool(s.get("adc_admin_password"))},
         {"id": "license", "label": "Licentie", "optional": True,
-         "ok": all((lic_mode == "file" and (s.get("license_files") or {}).get(a["site"]))
-                   or (lic_mode == "fortiflex" and (s.get("fortiflex_tokens") or {}).get(a["site"])) for a in adcs)},
+         "ok": (lic_mode == "fortiflex_api" and bool(flex.get("username") and flex.get("password")))
+               or all((lic_mode == "file" and (s.get("license_files") or {}).get(a["site"]))
+                      or (lic_mode == "fortiflex" and (s.get("fortiflex_tokens") or {}).get(a["site"])) for a in adcs)},
     ]
     return {
         "wan": wan, "adc_images": images, "license_mode": lic_mode,
+        "fortiflex_api": {"username": flex.get("username", ""), "password_set": bool(flex.get("password")),
+                          "program_serial": flex.get("program_serial", ""), "account_id": flex.get("account_id", "")},
         "adcs": [{"site": a["site"], "dc": a["dc"], "name": a["hostname"], "mgmt": a["mgmt"],
                   "mgmt_dhcp": a["mgmt_dhcp"], "license_file": (s.get("license_files") or {}).get(a["site"]),
                   "fortiflex_token": (s.get("fortiflex_tokens") or {}).get(a["site"]) or ""} for a in adcs],
@@ -214,6 +218,7 @@ class Settings(BaseModel):
     admin_password: Optional[str] = None
     license_mode: Optional[str] = None
     fortiflex_tokens: Optional[dict[str, str]] = None
+    fortiflex_api: Optional[dict[str, str]] = None   # username, password, program_serial, account_id
     desktop_mode: Optional[str] = None
     desktop_ip: Optional[str] = None
     desktop_gateway: Optional[str] = None
@@ -271,7 +276,7 @@ def save_settings(s: Settings):
             raise HTTPException(400, "admin-wachtwoord: minimaal 8 tekens, geen spaties, quotes of backslash")
         changes["adc_admin_password"] = s.admin_password
     if s.license_mode:
-        if s.license_mode not in ("none", "file", "fortiflex"):
+        if s.license_mode not in ("none", "file", "fortiflex", "fortiflex_api"):
             raise HTTPException(400, "ongeldige licentiemodus")
         changes["license_mode"] = s.license_mode
     if s.fortiflex_tokens:
@@ -284,6 +289,15 @@ def save_settings(s: Settings):
                 raise HTTPException(400, f"FortiFlex-token van {site} heeft een onverwacht formaat")
             tokens[site] = tok
         changes["fortiflex_tokens"] = tokens
+    if s.fortiflex_api is not None:
+        cur = dict(get_state().get("fortiflex_api") or {})
+        for k in ("username", "password", "program_serial", "account_id"):
+            v = (s.fortiflex_api.get(k) or "").strip()
+            if v or k in ("program_serial", "account_id"):      # leeg wachtwoord = ongewijzigd laten
+                cur[k] = v
+        if cur.get("account_id") and not cur["account_id"].isdigit():
+            raise HTTPException(400, "FortiFlex account-ID: alleen cijfers")
+        changes["fortiflex_api"] = cur
     if s.desktop_mode:
         if s.desktop_mode == "static":
             iface = _iface((s.desktop_ip or "").strip(), "Desktop-IP")
@@ -321,6 +335,65 @@ async def upload_image(request: Request, filename: str, kind: str):
             f.write(chunk)
     update_state(**{f"adc_{kind}_image": target, f"adc_{kind}_upload": Path(filename).name})
     return public_state()
+
+
+# --- FortiFlex via API (zelfde aanpak als sdwan-aiassist-lab) ------------------
+def _flex(fn):
+    from . import fortiflex
+    try:
+        return fn(fortiflex, load_topology())
+    except HTTPException:
+        raise
+    except Exception as e:  # noqa: BLE001
+        raise HTTPException(400, str(e)) from None
+
+
+@app.post("/api/fortiflex/test")
+def fortiflex_test():
+    return _flex(lambda ff, topo: ff.test(topo))
+
+
+@app.post("/api/fortiflex/configs")
+def fortiflex_configs():
+    """Maak de lab-configuratie (FortiADC-VM) aan als hij nog niet bestaat."""
+    def run(ff, topo):
+        lines = []
+        for kind in ff.PRODUCTS:
+            lines.append(f"{ff.config_name(topo, kind)}: id {ff.ensure_config(lines.append, topo, kind)}")
+        return {"log": lines}
+    return _flex(run)
+
+
+class FlexAction(BaseModel):
+    device: str
+    action: str            # activate | create | token | stop | reactivate | unlink
+
+
+@app.get("/api/fortiflex/entitlements")
+def fortiflex_entitlements():
+    return _flex(lambda ff, topo: ff.entitlements(topo))
+
+
+@app.post("/api/fortiflex/entitlement")
+def fortiflex_entitlement(a: FlexAction):
+    def run(ff, topo):
+        keys = [k for k, _ in ff.device_keys(topo)]
+        targets = keys if a.device == "all" else [a.device]
+        if any(k not in keys for k in targets):
+            raise HTTPException(400, "onbekend apparaat")
+        acts = {"activate": lambda k: ff.activate(lines.append, topo, k),
+                "create": lambda k: ff.create(lines.append, topo, k),
+                "token": lambda k: ff.new_token(lines.append, k),
+                "stop": lambda k: ff.release(lines.append, k),
+                "reactivate": lambda k: ff.reactivate(lines.append, k),
+                "unlink": lambda k: ff.unlink(lines.append, k)}
+        if a.action not in acts:
+            raise HTTPException(400, "onbekende actie")
+        lines: list[str] = []
+        for k in targets:
+            acts[a.action](k)
+        return {"log": lines}
+    return _flex(run)
 
 
 @app.post("/api/upload/license")
