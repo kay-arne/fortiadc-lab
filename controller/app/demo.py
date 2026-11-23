@@ -195,12 +195,14 @@ CATALOG = [
         {"id": "waf_mode", "arg": ["FRA", "VS-DVWA-FRA", "WAF-LAB-BLOCK"], "label": "DVWA: WAF op blokkeren"},
         {"id": "waf_mode", "arg": ["FRA", "VS-DVWA-FRA", "WAF-LAB-MONITOR"], "label": "DVWA: WAF op monitoren"},
     ]},
-    {"group": "GSLB", "doc": "07-gslb.md", "actions": [
+    {"group": "GSLB: bekijken", "doc": "07-gslb.md", "actions": [
         {"id": "dns", "arg": ["shop", "portal", "api", "juice"], "label": "DNS: wat antwoordt de lab-DNS nu?"},
-        {"id": "dns_watch", "arg": "shop", "label": "Volg shop 60 s (failover live)"},
-        {"id": "dns_watch", "arg": "portal", "label": "Volg portal 60 s"},
         {"id": "gslb_check", "arg": None, "label": "GSLB-controle: antwoord per DNS-server"},
         {"id": "gslb_status", "arg": None, "label": "GSLB-status op beide FortiADC's"},
+        {"id": "dns_watch", "arg": "shop", "label": "Volg shop 60 s (failover live)"},
+        {"id": "dns_watch", "arg": "portal", "label": "Volg portal 60 s"},
+    ]},
+    {"group": "GSLB: failover", "doc": "07-gslb.md", "actions": [
         {"id": "datacenter", "arg": ["AMS", "down"], "label": "Amsterdam: alle webservers UIT", "danger": True},
         {"id": "datacenter", "arg": ["AMS", "up"], "label": "Amsterdam: webservers AAN"},
         {"id": "datacenter", "arg": ["AMS", "outage"], "label": "Amsterdam: complete uitval (ook FortiADC)", "danger": True},

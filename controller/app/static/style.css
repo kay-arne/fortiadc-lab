@@ -322,3 +322,17 @@ pre.logbox { margin-top: 14px; }
 #topology .comp .comp-sub span { overflow-wrap: anywhere; }
 #topology .card-head .segsel { font-size: 12.5px; color: var(--muted); font-weight: 500; }
 .seg-meta { margin: 4px 0 0; color: var(--muted); font-size: 12px; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; overflow-wrap: anywhere; }
+
+/* --- demo-cockpit (zoals sdwan-aiassist-lab) --------------------------------- */
+.manual { display: grid; grid-template-columns: repeat(auto-fit, minmax(340px, 1fr)); gap: 28px; align-items: start; margin-top: 12px; }
+.mform h3 { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; margin: 0 0 10px;
+  font-size: 11px; font-weight: 600; letter-spacing: .09em; text-transform: uppercase; color: var(--muted); }
+.mform h3 a { font-size: 12px; font-weight: 500; letter-spacing: 0; text-transform: none; }
+.mrow { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; margin-bottom: 8px; }
+.mrow.btns { display: flex; flex-wrap: wrap; }
+.mrow.btns button { text-align: left; }
+.srvtable td { vertical-align: middle; }
+.srvtable th:last-child, .srvtable td:last-child { width: 1%; white-space: nowrap; }
+.srvbtns { display: flex; flex-wrap: nowrap; gap: 10px; justify-content: flex-end; }
+.srvbtns .pair { display: inline-flex; gap: 4px; }
+.srvbtns button { padding: 4px 9px; font-size: 12.5px; }

@@ -440,9 +440,8 @@ function runDemo(act) { action("/api/demo/run", act); }
 async function loadDemo() {
   if (!catalog) catalog = await api("/api/demo/catalog");
   $("#demo-groups").innerHTML = catalog.catalog.map((g, gi) => `
-    <div class="card demo-group"><div class="card-head"><h2>${esc(g.group)}</h2>
-      <a href="#" data-doc="${esc(g.doc)}">script</a></div>
-      <div class="demo-actions">${g.actions.map((a, ai) =>
+    <div class="mform"><h3><span>${esc(g.group)}</span><a href="#" data-doc="${esc(g.doc)}">script</a></h3>
+      <div class="mrow btns">${g.actions.map((a, ai) =>
         `<button class="${a.danger ? "danger" : ""}" data-act="${gi}:${ai}">${esc(a.label)}</button>`).join("")}</div></div>`).join("");
   $$("[data-act]").forEach((b) => (b.onclick = () => {
     const [gi, ai] = b.dataset.act.split(":").map(Number);
@@ -455,10 +454,11 @@ async function loadDemo() {
 
 function renderServers(list) {
   const btn = (name, what, txt, cls = "") => `<button class="${cls}" data-srv="${esc(name)}" data-what="${what}">${txt}</button>`;
-  $("#servers").innerHTML = `<table><tr><th>Server</th><th>App</th><th>DC / IP</th><th>Toestand</th><th></th></tr>${list.map((s) => `
-    <tr><td><b>${esc(s.name)}</b></td><td>${esc(s.app)}</td><td>${esc(s.dc || s.segment)} · ${esc(s.ip)}</td>
-      <td><span class="mono">${esc(s.state)}</span>${s.service && s.service !== "-" ? ` · ${esc(s.service)}` : ""}</td>
-      <td class="srvbtns">${btn(s.name, "fail", "Fail", "danger")}${btn(s.name, "ok", "OK")}${btn(s.name, "slow", "Traag")}${btn(s.name, "fast", "Snel")}${btn(s.name, "stop", "Stop", "danger")}${btn(s.name, "start", "Start")}</td></tr>`).join("")}</table>`;
+  const svc = (v) => !v || v === "-" ? "" : `<span class="tag ${v === "active" ? "ok" : "warn"}">${v === "active" ? "webserver draait" : esc(v)}</span>`;
+  $("#servers").innerHTML = `<table class="srvtable"><tr><th>Server</th><th>App</th><th>DC / IP</th><th>Toestand</th><th></th></tr>${list.map((s) => `
+    <tr><td><b>${esc(s.name)}</b></td><td>${esc(s.app)}</td><td>${esc(s.dc || s.segment)} · <span class="mono">${esc(s.ip)}</span></td>
+      <td><span class="mono">${esc(s.state)}</span> ${svc(s.service)}</td>
+      <td><div class="srvbtns"><span class="pair">${btn(s.name, "fail", "Fail", "danger")}${btn(s.name, "ok", "OK")}</span><span class="pair">${btn(s.name, "slow", "Traag")}${btn(s.name, "fast", "Snel")}</span><span class="pair">${btn(s.name, "stop", "Stop", "danger")}${btn(s.name, "start", "Start")}</span></div></td></tr>`).join("")}</table>`;
   $$("[data-srv]").forEach((b) => (b.onclick = () =>
     runDemo({ action: "server", arg: [b.dataset.srv, b.dataset.what], label: `${b.dataset.srv}: ${b.textContent}` })));
 }
